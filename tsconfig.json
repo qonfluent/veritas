@@ -3,6 +3,7 @@
 			"experimentalDecorators": true,
 			"alwaysStrict": true,
 			"allowJs": true,
+			"esModuleInterop": true,
 			"noImplicitAny": false,
 			"forceConsistentCasingInFileNames": true,
 			"noUnusedLocals": false,
