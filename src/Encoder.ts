@@ -1,4 +1,7 @@
+import assert from "assert"
+import { BitStream } from "./BitStream"
 import { DecoderDesc, Instruction } from "./Decoder"
+import { OpcodeType } from "./Types"
 
 export class Encoder {
 	// Widths of the format blocks in bits
@@ -13,6 +16,7 @@ export class Encoder {
 	// Shift offset bytes
 	private readonly _shiftOffset: number
 
+	private readonly _encoderTables: Map<OpcodeType, [number, number]>[]
 
 	public constructor(
 		private readonly _desc: DecoderDesc,
@@ -28,6 +32,9 @@ export class Encoder {
 		const minBodySize = this._formatWidths.reduce((accum, width) => accum + width)
 		const totalBits = this._headerBits + minBodySize
 		this._shiftOffset = Math.ceil(totalBits / 8)
+
+		// Generate encoder tables
+		this._encoderTables = this._desc.groups.map((group) => group.decoder.getEncoderTable())
 	}
 
 	public getInstructionBytes(ins: Instruction): number {
@@ -36,47 +43,41 @@ export class Encoder {
 		return Math.ceil(totalBits / 8)
 	}
 
-	public encodeInstruction(ins: Instruction): Uint8Array {
+	public encodeInstruction(ins: Instruction): BitStream {
 		// Encode shift header
-		// TODO: Pass in shift offset so it can be cached
-		/*
-		const insShift = getInstructionBytes(ins, desc) - getShiftOffsetBytes(desc)
-		assert(insShift < Math.pow(2, desc.shiftBits))
+		const result = new BitStream()
+		const insShift = this.getInstructionBytes(ins) - this._shiftOffset
+		assert(insShift < Math.pow(2, this._desc.shiftBits))
+		result.appendNum(insShift, this._desc.shiftBits)
 
-		let result = BigInt(insShift)
-		let shift = BigInt(desc.shiftBits)
-
-		// Encode count header
-		for (let i = 0; i < ins.formats.length; i++) {
-			const format = ins.formats[i]
-			assert(format.ops.length <= Math.pow(2, desc.formats[i].countBits), 'Too many operations in entry')
-			result |= BigInt(format.ops.length - 1) << shift
-			shift += BigInt(desc.formats[i].countBits)
+		// Encode count headers
+		assert(ins.groups.length === this._desc.groups.length)
+		for (let i = 0; i < ins.groups.length; i++) {
+			const format = ins.groups[i]
+			assert(format.ops.length <= this._desc.groups[i].lanes, 'Too many operations in entry')
+			const laneBits = Math.ceil(Math.log2(this._desc.groups[i].lanes))
+			result.appendNum(format.ops.length - 1, laneBits)
 		}
 
 		// Encode the bodies
-		for (let i = 0; i < ins.formats.length; i++) {
-			// TODO: Cache this
-			for (let j = 0; j < ins.formats[i].ops.length; j++) {
+		for (let i = 0; i < ins.groups.length; i++) {
+			for (let j = 0; j < ins.groups[i].ops.length; j++) {
 				// Encode opcode
-				const op = ins.formats[i].ops[j]
-				const opcodeInfo = encoderTables[i].get(op.opcode)
+				const op = ins.groups[i].ops[j]
+				const opcodeInfo = this._encoderTables[i].get(op.opcode)
 				assert(opcodeInfo !== undefined)
-				result |= BigInt(opcodeInfo[0]) << shift
-				shift += BigInt(opcodeInfo[1])
+				result.appendNum(opcodeInfo[0], opcodeInfo[1])
 
 				// Encode args
+				const expectedArgCount = this._desc.groups[i].ops[op.opcode].argTypes.length
+				assert(op.args.length === expectedArgCount, `Expected ${expectedArgCount} arguments, got ${op.args.length}`)
 				for (let k = 0; k < op.args.length; k++) {
 					const arg = op.args[k]
-					result |= BigInt(arg.value) << shift
-					shift += BigInt(desc.modeSizes[arg.mode])
+					result.appendNum(arg.index, this._desc.modeSizes[arg.mode])
 				}
 			}
 		}
 
-		return encodeBigInt(result, Number(shift))
-		*/
-
-		return new Uint8Array()
+		return result
 	}
 }

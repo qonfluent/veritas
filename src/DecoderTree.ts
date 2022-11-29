@@ -74,11 +74,11 @@ export class DecoderTree {
 		return decoder.opcode
 	}
 
-	public getEncoderTable(inner?: DecoderTreeInner): Map<OpcodeType, BitStream> {
+	public getEncoderTable(inner?: DecoderTreeInner): Map<OpcodeType, [number, number]> {
 		inner = inner ?? this._inner
 
 		if ('opcode' in inner) {
-			return new Map([[inner.opcode, new BitStream()]])
+			return new Map([[inner.opcode, [0, 0]]])
 		}
 	
 		// Get branch tables
@@ -86,14 +86,14 @@ export class DecoderTree {
 		const oneTable = this.getEncoderTable(inner.one)
 	
 		// Merge tables
-		const result: Map<OpcodeType, BitStream> = new Map()
-		zeroTable.forEach((bits, opcode) => {
-			bits.appendBit(false)
-			result.set(opcode, bits)
+		const result: Map<OpcodeType, [number, number]> = new Map()
+		zeroTable.forEach(([bits, width], opcode) => {
+			assert(width < 53)
+			result.set(opcode, [bits, width + 1])
 		})
-		oneTable.forEach((bits, opcode) => {
-			bits.appendBit(true)
-			result.set(opcode, bits)
+		oneTable.forEach(([bits, width], opcode) => {
+			assert(width < 53)
+			result.set(opcode, [(1 << width) | bits, width + 1])
 		})
 	
 		return result

@@ -32,7 +32,7 @@ export class BitStream {
 		value: Uint8Array = new Uint8Array(),
 		private _length = value.length * 8,
 	) {
-		assert(_length >= 8 * value.length - 7 && _length >= 1)
+		assert(_length >= 8 * value.length - 7 && _length >= 0, `Assigned length: ${_length}, calculated length: ${value.length}`)
 		this._value = decodeBigInt(value)
 	}
 
@@ -58,6 +58,11 @@ export class BitStream {
 	public appendBit(bit: boolean): void {
 		this._value |= BigInt(bit ? 1 : 0) << BigInt(this._length)
 		this._length++
+	}
+
+	public appendNum(value: number, length: number): void {
+		this._value |= BigInt(value) << BigInt(this._length)
+		this._length += length
 	}
 
 	public encode(): Uint8Array {
