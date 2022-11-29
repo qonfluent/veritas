@@ -22,11 +22,15 @@ export type Instruction = {
 	formats: FormatGroup[]
 }
 
+// TODO: rewrite these to use a factory and classes
+
 // Gets the length of an instruction in bytes
 export function getInstructionBytes(ins: Instruction, desc: InstructionSetDesc): number {
+	// TODO: Pass in formatWidths so it can be cached
 	const formatWidths = getFormatWidths(desc)
 	const bodyBits = ins.formats.reduce((accum, format, i) => accum + format.ops.length * formatWidths[i], 0)
 	
+	// TODO: Cache getCountBits + shiftBits = headerBits
 	const totalBits = desc.shiftBits + getCountBits(desc) + bodyBits
 
 	return Math.ceil(totalBits / 8)
@@ -34,6 +38,7 @@ export function getInstructionBytes(ins: Instruction, desc: InstructionSetDesc):
 
 export function encodeInstruction(ins: Instruction, desc: InstructionSetDesc, encoderTables: EncoderTable[]): Uint8Array {
 	// Encode shift header
+	// TODO: Pass in shift offset so it can be cached
 	const insShift = getInstructionBytes(ins, desc) - getShiftOffsetBytes(desc)
 	assert(insShift < Math.pow(2, desc.shiftBits))
 
