@@ -1,5 +1,5 @@
 import assert = require("assert")
-import { ArgType, getCountBits, getEncoderTable, getFormatWidths, getShiftOffsetBytes, InstructionSetDesc, OpcodeType } from "./InstructionSet"
+import { ArgType, EncoderTable, getCountBits, getEncoderTable, getFormatWidths, getShiftOffsetBytes, InstructionSetDesc, OpcodeType } from "./InstructionSet"
 import { decodeBigInt, encodeBigInt } from "./Utility"
 
 export type RegisterIndex = number
@@ -32,7 +32,7 @@ export function getInstructionBytes(ins: Instruction, desc: InstructionSetDesc):
 	return Math.ceil(totalBits / 8)
 }
 
-export function encodeInstruction(ins: Instruction, desc: InstructionSetDesc): Uint8Array {
+export function encodeInstruction(ins: Instruction, desc: InstructionSetDesc, encoderTables: EncoderTable[]): Uint8Array {
 	// Encode shift header
 	const insShift = getInstructionBytes(ins, desc) - getShiftOffsetBytes(desc)
 	assert(insShift < Math.pow(2, desc.shiftBits))
@@ -51,11 +51,10 @@ export function encodeInstruction(ins: Instruction, desc: InstructionSetDesc): U
 	// Encode the bodies
 	for (let i = 0; i < ins.formats.length; i++) {
 		// TODO: Cache this
-		const encoderTable = getEncoderTable(desc.formats[i].decoder)
 		for (let j = 0; j < ins.formats[i].ops.length; j++) {
 			// Encode opcode
 			const op = ins.formats[i].ops[j]
-			const opcodeInfo = encoderTable.get(op.opcode)
+			const opcodeInfo = encoderTables[i].get(op.opcode)
 			assert(opcodeInfo !== undefined)
 			result |= BigInt(opcodeInfo[0]) << shift
 			shift += BigInt(opcodeInfo[1])

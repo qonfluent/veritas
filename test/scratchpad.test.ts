@@ -1,4 +1,4 @@
-import { ArgType, createDecoder, InstructionSetDesc, OpcodeDesc } from '../src/InstructionSet'
+import { ArgType, createDecoder, getEncoderTable, InstructionSetDesc, OpcodeDesc } from '../src/InstructionSet'
 import { decodeInstruction, encodeInstruction, Instruction } from '../src/Instruction'
 
 describe('Scratchpad', () => {
@@ -37,7 +37,7 @@ describe('Scratchpad', () => {
 			],
 		}
 
-		const result0 = encodeInstruction(ins, desc)
+		const result0 = encodeInstruction(ins, desc, desc.formats.map((format) => getEncoderTable(format.decoder)))
 		const result1 = decodeInstruction(result0, desc)
 		expect(result1).toEqual(ins)
 	})
@@ -87,7 +87,7 @@ describe('Scratchpad', () => {
 			],
 		}
 
-		const result0 = encodeInstruction(ins, desc)
+		const result0 = encodeInstruction(ins, desc, desc.formats.map((format) => getEncoderTable(format.decoder)))
 		const result1 = decodeInstruction(result0, desc)
 		expect(result1).toEqual(ins)
 	})

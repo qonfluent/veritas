@@ -11,6 +11,8 @@ export type DecodeTree = {
 	one: DecodeTree
 }
 
+export type EncoderTable = Map<OpcodeType, [bigint, number]>
+
 export enum ArgType {
 	Reg,
 }
@@ -100,7 +102,7 @@ export function getShiftOffsetBytes(desc: InstructionSetDesc): number {
 }
 
 // Get the encoder table from a decoder tree
-export function getEncoderTable(decoder: DecodeTree): Map<OpcodeType, [bigint, number]> {
+export function getEncoderTable(decoder: DecodeTree): EncoderTable {
 	if ('opcode' in decoder) {
 		return new Map([[decoder.opcode, [BigInt(0), 0]]])
 	}
