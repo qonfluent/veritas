@@ -1,11 +1,11 @@
 import assert = require("assert")
-import { ArgType, EncoderTable, getCountBits, getEncoderTable, getFormatWidths, getShiftOffsetBytes, InstructionSetDesc, OpcodeType } from "./InstructionSet"
+import { ArgMode, ArgType, EncoderTable, getCountBits, getEncoderTable, getFormatWidths, getShiftOffsetBytes, InstructionSetDesc, OpcodeType } from "./InstructionSet"
 import { decodeBigInt, encodeBigInt } from "./Utility"
 
 export type RegisterIndex = number
 
 export type ArgValue = {
-	type: ArgType.Reg
+	mode: ArgMode.Reg
 	value: RegisterIndex
 }
 
@@ -68,7 +68,7 @@ export function encodeInstruction(ins: Instruction, desc: InstructionSetDesc, en
 			for (let k = 0; k < op.args.length; k++) {
 				const arg = op.args[k]
 				result |= BigInt(arg.value) << shift
-				shift += BigInt(desc.argTypeSizes[arg.type])
+				shift += BigInt(desc.modeSizes[arg.mode])
 			}
 		}
 	}
@@ -76,11 +76,11 @@ export function encodeInstruction(ins: Instruction, desc: InstructionSetDesc, en
 	return encodeBigInt(result, Number(shift))
 }
 
-export function decodeInstruction(data: Uint8Array, desc: InstructionSetDesc): Instruction {
+export function decodeInstruction(data: Uint8Array, desc: InstructionSetDesc): { instruction: Instruction, shift: number } {
 	let dataNum = decodeBigInt(data)
 
 	// Read shift header
-	const shift = Number(dataNum & ~BigInt(0xFFFFFFFF << desc.shiftBits))
+	const shift = Number(dataNum & ~BigInt(0xFFFFFFFF << desc.shiftBits)) + getShiftOffsetBytes(desc)
 	dataNum >>= BigInt(desc.shiftBits)
 
 	// Read count headers
@@ -114,10 +114,10 @@ export function decodeInstruction(data: Uint8Array, desc: InstructionSetDesc): I
 			const args: ArgValue[] = []
 			for (let k = 0; k < argTypes.length; k++) {
 				const type = argTypes[i]
-				const bitCount = desc.argTypeSizes[type]
+				const bitCount = desc.modeSizes[type.mode]
 				const value = Number(dataNum & ~BigInt(0xFFFFFFFF << bitCount))
 				dataNum >>= BigInt(bitCount)
-				args[k] = { type, value }
+				args[k] = { mode: type.mode, value }
 			}
 
 			ops[i][j] = { opcode, args }
@@ -125,6 +125,9 @@ export function decodeInstruction(data: Uint8Array, desc: InstructionSetDesc): I
 	}
 
 	return {
-		formats: ops.map((ops) => ({ ops })),
+		shift,
+		instruction: {
+			formats: ops.map((ops) => ({ ops })),
+		},
 	}
 }

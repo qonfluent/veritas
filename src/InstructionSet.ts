@@ -1,7 +1,11 @@
 import assert from 'assert'
+import { DataType, DataValue } from './Types'
 
 // An opcode is just an internal index, a number in this case
 export type OpcodeType = number
+
+// Time expressed in number of cycles
+export type CycleCount = number
 
 // A decode tree maps out the bits of the prefix tree for an opcode
 export type DecodeTree = {
@@ -13,15 +17,23 @@ export type DecodeTree = {
 
 export type EncoderTable = Map<OpcodeType, [bigint, number]>
 
-export enum ArgType {
+export enum ArgMode {
 	Reg,
 }
 
-export type ArgTypeSizeMap = { [K in ArgType]: number }
+export type ArgType = {
+	type: DataType
+	mode: ArgMode
+}
+
+export type ModeSizeMap = { [K in ArgMode]: number }
 
 // Descrbies a single operation
 export type OpcodeDesc = {
 	argTypes: ArgType[]
+	startLatency: CycleCount
+	finishLatency: CycleCount
+	body: (args: DataValue[]) => DataValue[]
 }
 
 // A format contains a group of related opcodes, grouped for compression and lane specializaiton
@@ -34,15 +46,15 @@ export type FormatDesc = {
 // Describes an entire instruction set
 export type InstructionSetDesc = {
 	shiftBits: number
-	argTypeSizes: ArgTypeSizeMap
+	modeSizes: ModeSizeMap
 	formats: FormatDesc[]
 }
 
-export function getOpArgsWidth(op: OpcodeDesc, argTypeSizes: ArgTypeSizeMap): number {
-	return op.argTypes.reduce((accum, argType) => accum + argTypeSizes[argType])
+export function getOpArgsWidth(op: OpcodeDesc, modeSizes: ModeSizeMap): number {
+	return op.argTypes.reduce((accum, argType) => accum + modeSizes[argType.mode], 0)
 }
 
-export function createDecoder(entries: OpcodeDesc[], argSizes: ArgTypeSizeMap): DecodeTree {
+export function createDecoder(entries: OpcodeDesc[], argSizes: ModeSizeMap): DecodeTree {
 	assert(entries.length >= 1)
 
 	// Handle one entry special case
@@ -69,23 +81,23 @@ export function createDecoder(entries: OpcodeDesc[], argSizes: ArgTypeSizeMap): 
 }
 
 // Gets the max total bit width of a decoder
-export function getDecoderMaxTotalWidth(decoder: DecodeTree, ops: OpcodeDesc[], argTypeSizes: ArgTypeSizeMap): number {
+export function getDecoderMaxTotalWidth(decoder: DecodeTree, ops: OpcodeDesc[], modeSizes: ModeSizeMap): number {
 	if ('opcode' in decoder) {
 		// Base case. Add up arg widths for opcode
-		const argsLength = getOpArgsWidth(ops[decoder.opcode], argTypeSizes)
+		const argsLength = getOpArgsWidth(ops[decoder.opcode], modeSizes)
 		return argsLength
 	}
 
 	// Recursive case. Find max of all branches total widths
-	const zeroWidth = getDecoderMaxTotalWidth(decoder.zero, ops, argTypeSizes)
-	const oneWidth = getDecoderMaxTotalWidth(decoder.one, ops, argTypeSizes)
+	const zeroWidth = getDecoderMaxTotalWidth(decoder.zero, ops, modeSizes)
+	const oneWidth = getDecoderMaxTotalWidth(decoder.one, ops, modeSizes)
 
 	return 1 + (zeroWidth > oneWidth ? zeroWidth : oneWidth)
 }
 
 // Get the widths of each format, in bits
 export function getFormatWidths(desc: InstructionSetDesc): number[] {
-	return desc.formats.map((format) => getDecoderMaxTotalWidth(format.decoder, format.ops, desc.argTypeSizes))
+	return desc.formats.map((format) => getDecoderMaxTotalWidth(format.decoder, format.ops, desc.modeSizes))
 }
 
 export function getCountBits(desc: InstructionSetDesc): number {
@@ -94,8 +106,7 @@ export function getCountBits(desc: InstructionSetDesc): number {
 
 // Get the length of the smallest instruction in the instruction set, in bytes
 export function getShiftOffsetBytes(desc: InstructionSetDesc): number {
-	const formatWidths = getFormatWidths(desc)
-	const minBodySize = desc.formats.reduce((accum, format) => accum + getDecoderMaxTotalWidth(format.decoder, format.ops, desc.argTypeSizes), 0)
+	const minBodySize = getFormatWidths(desc).reduce((accum, width) => accum + width)
 	const totalBits = desc.shiftBits + getCountBits(desc) + minBodySize
 
 	return Math.ceil(totalBits / 8)
