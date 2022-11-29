@@ -1,5 +1,6 @@
 import assert = require("assert")
 import { ArgType, getCountBits, getEncoderTable, getFormatWidths, getShiftOffsetBytes, InstructionSetDesc, OpcodeType } from "./InstructionSet"
+import { decodeBigInt, encodeBigInt } from "./Utility"
 
 export type RegisterIndex = number
 
@@ -21,6 +22,7 @@ export type Instruction = {
 	formats: FormatGroup[]
 }
 
+// Gets the length of an instruction in bytes
 export function getInstructionBytes(ins: Instruction, desc: InstructionSetDesc): number {
 	const formatWidths = getFormatWidths(desc)
 	const bodyBits = ins.formats.reduce((accum, format, i) => accum + format.ops.length * formatWidths[i], 0)
@@ -28,31 +30,6 @@ export function getInstructionBytes(ins: Instruction, desc: InstructionSetDesc):
 	const totalBits = desc.shiftBits + getCountBits(desc) + bodyBits
 
 	return Math.ceil(totalBits / 8)
-}
-
-export function encodeBigInt(value: bigint, width: number): Uint8Array {
-	const result: number[] = []
-
-	while(value > 0) {
-		result.push(Number(value & BigInt(0xFF)))
-		value >>= BigInt(8)
-	}
-
-	while (result.length < Math.ceil(width / 8)) {
-		result.push(0)
-	}
-
-	return new Uint8Array(result)
-}
-
-export function decodeBigInt(data: Uint8Array): bigint {
-	let result = BigInt(0)
-
-	for (let i = 0; i < data.length; i++) {
-		result |= BigInt(data[i]) << BigInt(i * 8)
-	}
-
-	return result
 }
 
 export function encodeInstruction(ins: Instruction, desc: InstructionSetDesc): Uint8Array {
@@ -120,11 +97,10 @@ export function decodeInstruction(data: Uint8Array, desc: InstructionSetDesc): I
 			let { decoder } = format
 
 			while(!('opcode' in decoder)) {
-				const bitCount = Math.ceil(Math.log2(decoder.branches.length))
-				const index = Number(dataNum & ~BigInt(0xFFFFFFFF << bitCount))
-				dataNum >>= BigInt(bitCount)
+				const bit = (dataNum & BigInt(1)) !== BigInt(0)
+				dataNum >>= BigInt(1)
 
-				decoder = decoder.branches[index]
+				decoder = bit ? decoder.one : decoder.zero
 			}
 
 			const opcode = decoder.opcode

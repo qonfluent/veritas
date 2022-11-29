@@ -7,7 +7,8 @@ export type OpcodeType = number
 export type DecodeTree = {
 	opcode: OpcodeType
 } | {
-	branches: DecodeTree[]
+	zero: DecodeTree
+	one: DecodeTree
 }
 
 export enum ArgType {
@@ -35,39 +36,49 @@ export type InstructionSetDesc = {
 	formats: FormatDesc[]
 }
 
-// Gets the max opcode bits from a decoder
-export function getDecoderMaxHeaderWidth(decoder: DecodeTree): number {
-	if ('opcode' in decoder) {
-		return 0
+export function getOpArgsWidth(op: OpcodeDesc, argTypeSizes: ArgTypeSizeMap): number {
+	return op.argTypes.reduce((accum, argType) => accum + argTypeSizes[argType])
+}
+
+export function createDecoder(entries: OpcodeDesc[], argSizes: ArgTypeSizeMap): DecodeTree {
+	assert(entries.length >= 1)
+
+	// Handle one entry special case
+	if (entries.length === 1) {
+		return { opcode: 0 }
+	}
+	
+	// Map and sort entries
+	const mappedEntries: { decoder: DecodeTree, weight: number }[] = entries.map((op, opcode) => ({ decoder: { opcode }, weight: getOpArgsWidth(op, argSizes) }))
+	const sortedEntries = mappedEntries.sort(({ weight: lhs }, { weight: rhs }) => lhs === rhs ? 0 : lhs > rhs ? 1 : -1)
+
+	while (sortedEntries.length > 2) {
+		const [{ decoder: zero, weight: zeroWeight }, { decoder: one, weight: oneWeight }] = sortedEntries.splice(0, 2)
+		const newNode = { decoder: { zero, one }, weight: zeroWeight + oneWeight }
+		// TODO: Use a log search here instead of a linear search!
+		const insertIndex = sortedEntries.findIndex(({ weight }) => weight > newNode.weight)
+		sortedEntries.splice(insertIndex, 0, newNode)
 	}
 
-	// Recursive case, calculate max(branchBits)
-	const branchBits = decoder.branches.map((branch) => getDecoderMaxHeaderWidth(branch))
-	const maxBranchBits = branchBits.reduce((accum, branch) => accum > branch ? accum : branch)
-
-	// Select bits = clog2(branchCount)
-	const selectBits = Math.ceil(Math.log2(decoder.branches.length))
-
-	// Total is select bits + max(branch bits)
-	return selectBits + maxBranchBits
+	return {
+		zero: sortedEntries[0].decoder,
+		one: sortedEntries[1].decoder,
+	}
 }
 
 // Gets the max total bit width of a decoder
 export function getDecoderMaxTotalWidth(decoder: DecodeTree, ops: OpcodeDesc[], argTypeSizes: ArgTypeSizeMap): number {
 	if ('opcode' in decoder) {
-		const argsLength = ops[decoder.opcode].argTypes.reduce((accum, argType) => accum + argTypeSizes[argType])
+		// Base case. Add up arg widths for opcode
+		const argsLength = getOpArgsWidth(ops[decoder.opcode], argTypeSizes)
 		return argsLength
 	}
 
-	// Recursive case, find the max of each branch's width
-	const branchBits = decoder.branches.map((branch) => getDecoderMaxTotalWidth(branch, ops, argTypeSizes))
-	const maxBranchBits = branchBits.reduce((accum, branch) => accum > branch ? accum : branch)
+	// Recursive case. Find max of all branches total widths
+	const zeroWidth = getDecoderMaxTotalWidth(decoder.zero, ops, argTypeSizes)
+	const oneWidth = getDecoderMaxTotalWidth(decoder.one, ops, argTypeSizes)
 
-	// clog2(branches) bits used to select in decoder
-	const selectBits = Math.ceil(Math.log2(decoder.branches.length))
-
-	// Total is selectBits + max(branchBits)
-	return selectBits + maxBranchBits
+	return 1 + (zeroWidth > oneWidth ? zeroWidth : oneWidth)
 }
 
 // Get the widths of each format, in bits
@@ -88,22 +99,23 @@ export function getShiftOffsetBytes(desc: InstructionSetDesc): number {
 	return Math.ceil(totalBits / 8)
 }
 
+// Get the encoder table from a decoder tree
 export function getEncoderTable(decoder: DecodeTree): Map<OpcodeType, [bigint, number]> {
 	if ('opcode' in decoder) {
 		return new Map([[decoder.opcode, [BigInt(0), 0]]])
 	}
 
 	// Get branch tables
-	const branchTables = decoder.branches.map((branch) => getEncoderTable(branch))
+	const zeroTable = getEncoderTable(decoder.zero)
+	const oneTable = getEncoderTable(decoder.one)
 
 	// Merge tables
-	const selectBits = Math.ceil(Math.log2(decoder.branches.length))
 	const result: Map<OpcodeType, [bigint, number]> = new Map()
-	branchTables.forEach((entry, i) => {
-		entry.forEach(([bits, width], key) => {
-			assert(!result.has(key))
-			result.set(key, [(BigInt(i) << BigInt(width)) | bits, width + selectBits])
-		})
+	zeroTable.forEach(([bits, width], opcode) => {
+		result.set(opcode, [bits, 1 + width])
+	})
+	oneTable.forEach(([bits, width], opcode) => {
+		result.set(opcode, [(BigInt(1) << BigInt(width)) | bits, 1 + width])
 	})
 
 	return result
