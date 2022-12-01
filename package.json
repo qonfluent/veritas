@@ -10,6 +10,8 @@
   "author": "",
   "license": "AGPL3",
   "dependencies": {
+    "@astronautlabs/bitstream": "^4.1.3",
+    "stream-buffers": "^3.0.2",
     "zod": "^3.19.1"
   },
   "devDependencies": {
