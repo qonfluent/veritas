@@ -15,22 +15,22 @@ export class DecoderTree {
 	private readonly _opcodeWidths: number[]
 
 	public constructor(
-		private readonly _entries: OperationDesc[],
+		entries: OperationDesc[],
 		private readonly _modeSizes: ModeSizeMap,
 	) {
-		assert(_entries.length >= 1)
+		assert(entries.length >= 1)
 
-		this._opcodeWidths = _entries.map((op) => op.argTypes.reduce((accum, argType) => accum + this._modeSizes[argType.mode], 0))
+		this._opcodeWidths = entries.map((op) => op.argTypes.reduce((accum, argType) => accum + this._modeSizes[argType.mode], 0))
 
 		// Handle one entry special case
-		if (_entries.length === 1) {
+		if (entries.length === 1) {
 			this._inner = { opcode: 0 }
 			return
 		}
 		
 		// Map and sort entries
 		const mappedEntries: { decoder: DecoderTreeInner, weight: number }[]
-			= _entries.map((_, opcode) => ({ decoder: { opcode }, weight: this._opcodeWidths[opcode] }))
+			= entries.map((_, opcode) => ({ decoder: { opcode }, weight: this._opcodeWidths[opcode] }))
 		const sortedEntries = mappedEntries.sort(({ weight: lhs }, { weight: rhs }) => lhs === rhs ? 0 : lhs > rhs ? 1 : -1)
 
 		while (sortedEntries.length > 2) {
