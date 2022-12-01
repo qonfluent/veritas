@@ -1,7 +1,9 @@
-import { BitStream } from "./BitStream"
+import assert from "assert"
 import { DecoderTree } from "./DecoderTree"
 import { ArgValue, ModeSizeMap, OperationDesc } from "./Operation"
 import { OpcodeType } from "./Types"
+import StreamBuffers from 'stream-buffers'
+import { BitstreamReader } from "@astronautlabs/bitstream"
 
 export type InstructionGroupDesc = {
 	lanes: number
@@ -31,7 +33,7 @@ export type Instruction = {
 export type DecoderDesc = InstructionSetDesc
 
 export type DecoderInput = {
-	instruction: BitStream
+	instruction: Uint8Array
 }
 
 export type DecoderOutput = {
@@ -52,6 +54,9 @@ export class DecoderUnit {
 	// Shift offset bytes
 	private readonly _shiftOffset: number
 
+	// Padding bits
+	private readonly _paddingBits: number[][]
+
 	public constructor(
 		private readonly _desc: DecoderDesc,
 	) {
@@ -66,17 +71,34 @@ export class DecoderUnit {
 		const minBodySize = this._formatWidths.reduce((accum, width) => accum + width)
 		const totalBits = this._headerBits + minBodySize
 		this._shiftOffset = Math.ceil(totalBits / 8)
+
+		// Get encoder tables
+		const encoderTables = this._desc.groups.map((group) => group.decoder.getEncoderTable())
+
+		// Calculate padding bits
+		this._paddingBits = _desc.groups.map((group, i) => {
+			return group.ops.map((op, opcode) => {
+				const argWidth = op.argTypes.reduce((accum, argType) => accum + _desc.modeSizes[argType.mode], 0)
+				const opcodeWidth = encoderTables[i].get(opcode)
+				assert(opcodeWidth !== undefined)
+
+				return this._formatWidths[i] - opcodeWidth[1] - argWidth
+			})
+		})
 	}
 
 	public step(input: DecoderInput): DecoderOutput {
+		const reader = new BitstreamReader()
+		reader.addBuffer(input.instruction)
+
 		// Load shift
-		const shift = input.instruction.getNum(this._desc.shiftBits) + this._shiftOffset
+		const shift = reader.readSync(this._desc.shiftBits) + this._shiftOffset
 
 		// Load count header bits
 		const groupCount = this._desc.groups.length
 		const counts: number[] = []
 		for (let i = 0; i < groupCount; i++) {
-			counts.push(1 + input.instruction.getNum(this._countBits[i]))
+			counts.push(1 + reader.readSync(this._countBits[i]))
 		}
 
 		// Load bodies
@@ -91,7 +113,10 @@ export class DecoderUnit {
 			// Add group members up to count
 			for (let j = 0; j < counts[i]; j++) {
 				// Lookup opcode
-				const opcode = group.decoder.lookup(input.instruction)
+				const opcode = group.decoder.lookup(reader)
+
+				// Discard padding bits
+				reader.readSync(this._paddingBits[i][opcode])
 
 				// Lookup arg types and iterate
 				const argTypes = group.ops[opcode].argTypes
@@ -104,7 +129,7 @@ export class DecoderUnit {
 					const bitCount = this._desc.modeSizes[mode]
 
 					// Add new argument
-					args.push({ mode, index: input.instruction.getNum(bitCount) })
+					args.push({ mode, index: reader.readSync(bitCount) })
 				}
 
 				// Add new operation

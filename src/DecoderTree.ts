@@ -1,5 +1,5 @@
+import { BitstreamReader } from "@astronautlabs/bitstream"
 import assert from "assert"
-import { BitStream } from "./BitStream"
 import { ModeSizeMap, OperationDesc } from "./Operation"
 import { OpcodeType } from "./Types"
 
@@ -38,7 +38,11 @@ export class DecoderTree {
 			const newNode = { decoder: { zero, one }, weight: zeroWeight + oneWeight }
 			// TODO: Use a log search here instead of a linear search!
 			const insertIndex = sortedEntries.findIndex(({ weight }) => weight > newNode.weight)
-			sortedEntries.splice(insertIndex, 0, newNode)
+			if (insertIndex !== -1) {
+				sortedEntries.splice(insertIndex, 0, newNode)
+			} else {
+				sortedEntries.push(newNode)
+			}
 		}
 
 		this._inner = {
@@ -63,11 +67,11 @@ export class DecoderTree {
 		return 1 + (zeroWidth > oneWidth ? zeroWidth : oneWidth)
 	}
 
-	public lookup(bits: BitStream): OpcodeType {
+	public lookup(bits: BitstreamReader): OpcodeType {
 		let decoder = this._inner
 
 		while(!('opcode' in decoder)) {
-			const bit = bits.getBit()
+			const bit = bits.readSync(1) !== 0
 			decoder = bit ? decoder.one : decoder.zero
 		}
 
@@ -89,10 +93,12 @@ export class DecoderTree {
 		const result: Map<OpcodeType, [number, number]> = new Map()
 		zeroTable.forEach(([bits, width], opcode) => {
 			assert(width < 53)
+			assert(!result.has(opcode))
 			result.set(opcode, [bits, width + 1])
 		})
 		oneTable.forEach(([bits, width], opcode) => {
 			assert(width < 53)
+			assert(!result.has(opcode))
 			result.set(opcode, [(1 << width) | bits, width + 1])
 		})
 	

@@ -1,7 +1,8 @@
 import assert from "assert"
-import { BitStream } from "./BitStream"
 import { DecoderDesc, Instruction } from "./Decoder"
 import { OpcodeType } from "./Types"
+import { BitstreamWriter } from '@astronautlabs/bitstream'
+import StreamBuffers from 'stream-buffers'
 
 export class Encoder {
 	// Widths of the format blocks in bits
@@ -16,7 +17,9 @@ export class Encoder {
 	// Shift offset bytes
 	private readonly _shiftOffset: number
 
+	// TODO: Replace this type with [number, number][][]? Give it a typedef?
 	private readonly _encoderTables: Map<OpcodeType, [number, number]>[]
+	private readonly _paddingBits: number[][]
 
 	public constructor(
 		private readonly _desc: DecoderDesc,
@@ -35,6 +38,17 @@ export class Encoder {
 
 		// Generate encoder tables
 		this._encoderTables = this._desc.groups.map((group) => group.decoder.getEncoderTable())
+
+		// Calculate padding bits
+		this._paddingBits = _desc.groups.map((group, i) => {
+			return group.ops.map((op, opcode) => {
+				const argWidth = op.argTypes.reduce((accum, argType) => accum + _desc.modeSizes[argType.mode], 0)
+				const opcodeWidth = this._encoderTables[i].get(opcode)
+				assert(opcodeWidth !== undefined, 'Unknown opcode')
+
+				return this._formatWidths[i] - opcodeWidth[1] - argWidth
+			})
+		})
 	}
 
 	public getInstructionBytes(ins: Instruction): number {
@@ -43,41 +57,58 @@ export class Encoder {
 		return Math.ceil(totalBits / 8)
 	}
 
-	public encodeInstruction(ins: Instruction): BitStream {
+	public encodeInstruction(ins: Instruction): Uint8Array {
 		// Encode shift header
-		const result = new BitStream()
-		const insShift = this.getInstructionBytes(ins) - this._shiftOffset
-		assert(insShift < Math.pow(2, this._desc.shiftBits))
-		result.appendNum(insShift, this._desc.shiftBits)
+		const insLength = this.getInstructionBytes(ins)
+		const buffer = new StreamBuffers.WritableStreamBuffer({ initialSize: insLength })
+		const result = new BitstreamWriter(buffer)
+		const insShift = insLength - this._shiftOffset
+		assert(insShift < Math.pow(2, this._desc.shiftBits), 'Instruction too long')
+		result.write(this._desc.shiftBits, insShift)
 
 		// Encode count headers
 		assert(ins.groups.length === this._desc.groups.length)
 		for (let i = 0; i < ins.groups.length; i++) {
-			const format = ins.groups[i]
-			assert(format.ops.length <= this._desc.groups[i].lanes, 'Too many operations in entry')
+			const group = ins.groups[i]
+			assert(group.ops.length >= 1, 'No operations in group')
+			assert(group.ops.length <= this._desc.groups[i].lanes, 'Too many operations in entry')
 			const laneBits = Math.ceil(Math.log2(this._desc.groups[i].lanes))
-			result.appendNum(format.ops.length - 1, laneBits)
+			result.write(laneBits, group.ops.length - 1)
 		}
 
 		// Encode the bodies
 		for (let i = 0; i < ins.groups.length; i++) {
 			for (let j = 0; j < ins.groups[i].ops.length; j++) {
 				// Encode opcode
+				const startBit = result.offset
 				const op = ins.groups[i].ops[j]
 				const opcodeInfo = this._encoderTables[i].get(op.opcode)
-				assert(opcodeInfo !== undefined)
-				result.appendNum(opcodeInfo[0], opcodeInfo[1])
+				assert(opcodeInfo !== undefined, 'Unknown opcode')
+				result.write(opcodeInfo[1], opcodeInfo[0])
+
+				// Encode padding bits
+				result.write(this._paddingBits[i][op.opcode], 0)
 
 				// Encode args
 				const expectedArgCount = this._desc.groups[i].ops[op.opcode].argTypes.length
 				assert(op.args.length === expectedArgCount, `Expected ${expectedArgCount} arguments, got ${op.args.length}`)
 				for (let k = 0; k < op.args.length; k++) {
 					const arg = op.args[k]
-					result.appendNum(arg.index, this._desc.modeSizes[arg.mode])
+					result.write(this._desc.modeSizes[arg.mode], arg.index)
 				}
 			}
 		}
 
-		return result
+		// Add final padding
+		const padBits = 8 - (result.offset % 8)
+		if (padBits !== 8) {
+			result.write(padBits, 0)
+		}
+
+		// Validate length
+		assert(result.offset === insLength * 8)
+
+		buffer.end()
+		return buffer.getContents()
 	}
 }

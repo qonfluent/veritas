@@ -1,5 +1,5 @@
 import assert from "assert"
-import { DataValue, DataType, typeEqual, CycleCount, RegisterIndex } from "./Types"
+import { DataValue, DataType, CycleCount, RegisterIndex } from "./Types"
 
 export enum ArgMode {
 	Reg,
