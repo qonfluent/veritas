@@ -4,24 +4,30 @@ export type CacheDesc = {
 	widthBits: number
 	rowCount: number
 	ways: number
+	latency: number
 }
 
 export type Address = number
 
+export enum CacheOp {
+	Read,
+	Write,
+}
+
 export type CacheInput = {
-	write: false
+	op: CacheOp.Read
 	address: Address
 } | {
-	write: true
+	op: CacheOp.Write
 	address: Address
 	data: Uint8Array
 }
 
 export type CacheOutput = {
-	write: false
+	op: CacheOp.Read
 	data?: Uint8Array
 } | {
-	write: true
+	op: CacheOp.Write
 	evicted?: {
 		address: Address
 		data: Uint8Array
@@ -37,6 +43,7 @@ export type CacheLine = {
 export class CacheUnit {
 	private readonly _ways: CacheLine[][] = []
 	private readonly _rowBits: number
+	private readonly _results: (CacheOutput | undefined)[] = []
 
 	public constructor(
 		private readonly _desc: CacheDesc,
@@ -62,66 +69,78 @@ export class CacheUnit {
 			const rowIndex = input.address & ~(0xFFFFFFFF << this._rowBits)
 			const tagIndex = input.address >> this._rowBits
 
-			if (input.write) {
-				// Write operation, ensure value is valid
-				assert(input.data.length * 8 === this._desc.widthBits)
+			const hitWayIndex = this._ways.findIndex((way) => way[rowIndex].valid && way[rowIndex].tag === tagIndex)
 
-				// Search for hit
-				const hitWayIndex = this._ways.findIndex((way) => way[rowIndex].valid && way[rowIndex].tag === tagIndex)
-				if (hitWayIndex !== -1) {
-					// Update row
-					this._ways[hitWayIndex][rowIndex].data = input.data
-
-					return { write: true }
-				}
-
-				// Find empty way
-				const invalidWayIndex = this._ways.findIndex((way) => !way[rowIndex].valid)
-				if (invalidWayIndex === -1) {
-					// All ways hit, we have to evict. Start by picking the evicted member
-					// TODO: Use something like LRU instead
-					const evictWay = Math.floor(Math.random() * this._ways.length)
-					const evictAddr = (this._ways[evictWay][rowIndex].tag << this._rowBits) | rowIndex
-					const evictData = this._ways[evictWay][rowIndex].data
+			let result: CacheOutput
+			switch (input.op) {
+				case CacheOp.Read: {
+					// Read operation
 					
-					// Write the data
-					this._ways[evictWay][rowIndex].tag = tagIndex
-					this._ways[evictWay][rowIndex].data = input.data
-
-					// Return the evicted data
-					return {
-						write: true,
-						evicted: {
-							address: evictAddr,
-							data: evictData,
+					if (hitWayIndex === -1) {
+						result = { op: CacheOp.Read }
+						break
+					} else {
+						result = {
+							op: CacheOp.Read,
+							data: this._ways[hitWayIndex][rowIndex].data,
 						}
-					}
-				} else {
-					// Write the data to the invalid way
-					this._ways[invalidWayIndex][rowIndex] = {
-						valid: true,
-						tag: tagIndex,
-						data: input.data,
-					}
-					
-					return { write: true }
-				}
-			} else {
-				// Read operation
-				const hitIndex = this._ways.findIndex((way) => way[rowIndex].valid && way[rowIndex].tag === tagIndex)
-				if (hitIndex === -1) {
-					return {
-						write: false,
-					}
-				} else {
-					return {
-						write: false,
-						data: this._ways[hitIndex][rowIndex].data,
+						break
 					}
 				}
+				case CacheOp.Write: {
+					// Write operation, ensure value is valid
+					assert(input.data.length * 8 === this._desc.widthBits)
+
+					// Search for hit
+					if (hitWayIndex !== -1) {
+						// Update row
+						this._ways[hitWayIndex][rowIndex].data = input.data
+
+						result = { op: CacheOp.Write }
+						break
+					}
+
+					// Find empty way
+					const invalidWayIndex = this._ways.findIndex((way) => !way[rowIndex].valid)
+					if (invalidWayIndex === -1) {
+						// All ways hit, we have to evict. Start by picking the evicted member
+						// TODO: Use something like LRU instead
+						const evictWay = Math.floor(Math.random() * this._ways.length)
+						const evictAddr = (this._ways[evictWay][rowIndex].tag << this._rowBits) | rowIndex
+						const evictData = this._ways[evictWay][rowIndex].data
+						
+						// Write the data
+						this._ways[evictWay][rowIndex].tag = tagIndex
+						this._ways[evictWay][rowIndex].data = input.data
+
+						// Return the evicted data
+						result = {
+							op: CacheOp.Write,
+							evicted: {
+								address: evictAddr,
+								data: evictData,
+							}
+						}
+
+						break
+					} else {
+						// Write the data to the invalid way
+						this._ways[invalidWayIndex][rowIndex] = {
+							valid: true,
+							tag: tagIndex,
+							data: input.data,
+						}
+
+						result = { op: CacheOp.Write }
+						break
+					}	
+				}	
 			}
+
+			this._results[this._desc.latency] = result
 		}
 
-		return undefined
+		const [result] = this._results.splice(0, 1)
+		return result
 	}
 }
