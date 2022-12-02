@@ -87,6 +87,11 @@ export class DecoderUnit {
 		})
 	}
 
+	public getMaxInstructionWidth(): number {
+		const result = this._headerBits + this._formatWidths.reduce((accum, width, i) => accum + width * this._desc.groups[i].lanes)
+		return result
+	}
+
 	public step(input: DecoderInput): DecoderOutput {
 		const reader = new BitstreamReader()
 		reader.addBuffer(input.instruction)
