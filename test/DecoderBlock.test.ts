@@ -1,7 +1,6 @@
 import { CacheOp } from "../src/Cache"
 import { Instruction } from "../src/Decoder"
 import { DecoderBlockDesc, DecoderBlockUnit } from "../src/DecoderBlock"
-import { DecoderTree } from "../src/DecoderTree"
 import { Encoder } from "../src/Encoder"
 import { ModeSizeMap, ArgMode, OperationDesc } from "../src/Operation"
 
@@ -36,7 +35,6 @@ describe('DecoderBlock', () => {
 				groups: [
 					{
 						lanes: 1,
-						decoder: new DecoderTree(ops, modeSizes),
 						ops,
 					}
 				],
@@ -47,7 +45,7 @@ describe('DecoderBlock', () => {
 
 		// Perform init step
 		const initStep = decoderBlock.step()
-		expect(initStep).toEqual({ l2Cache: { op: CacheOp.Read, address: 0, widthBytes: cacheWidthBytes }})
+		expect(initStep).toEqual({ cacheEvict: undefined, cacheMiss: { op: CacheOp.Read, address: 0, widthBytes: cacheWidthBytes } })
 		
 		// Perform cache fill using encoded instruction
 		const instruction: Instruction = {
@@ -68,17 +66,14 @@ describe('DecoderBlock', () => {
 		const encIns = encoder.encodeInstruction(instruction)
 		const data = new Uint8Array([...encIns, ...[...Array(cacheWidthBytes - encIns.length)].map(() => 0)])
 		const fillStep = decoderBlock.step({
-			l2Cache: {
+			cacheWrite: {
 				op: CacheOp.Write,
 				address: 0,
 				data,
 			}
 		})
 
-		expect(fillStep).toEqual({})
-
-		const decodeStep = decoderBlock.step()
-		expect(decodeStep?.decoded).toEqual(instruction)
+		expect(fillStep).toEqual({ cacheEvict: undefined, cacheMiss: undefined, decoded: instruction })
 		expect(decoderBlock.ip).toBe(encIns.length)
 	})
 })

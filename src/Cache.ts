@@ -26,6 +26,7 @@ export type CacheWriteInput = {
 	data: Uint8Array
 }
 
+// TODO: Replace with with a two port read/write cache input
 export type CacheInput = CacheReadInput | CacheWriteInput
 
 export type CacheReadOutput = {

@@ -3,6 +3,7 @@ import { DecoderDesc, Instruction } from "./Decoder"
 import { OpcodeType } from "./Types"
 import { BitstreamWriter } from '@astronautlabs/bitstream'
 import StreamBuffers from 'stream-buffers'
+import { DecoderTree } from "./DecoderTree"
 
 export class Encoder {
 	// Widths of the format blocks in bits
@@ -21,11 +22,16 @@ export class Encoder {
 	private readonly _encoderTables: Map<OpcodeType, [number, number]>[]
 	private readonly _paddingBits: number[][]
 
+	private readonly _decoderTrees: DecoderTree[]
+
 	public constructor(
 		private readonly _desc: DecoderDesc,
 	) {
+		// Set up decoder trees
+		this._decoderTrees = _desc.groups.map((desc) => new DecoderTree(desc.ops, _desc.modeSizes))
+
 		// Calculate format widths
-		this._formatWidths = _desc.groups.map((group) => group.decoder.getMaxTotalWidth())
+		this._formatWidths = this._decoderTrees.map((decoder) => decoder.getMaxTotalWidth())
 
 		// Calculate header bit count
 		this._countBits = _desc.groups.map((group) => Math.ceil(Math.log2(group.lanes)))
@@ -37,7 +43,7 @@ export class Encoder {
 		this._shiftOffset = Math.ceil(totalBits / 8)
 
 		// Generate encoder tables
-		this._encoderTables = this._desc.groups.map((group) => group.decoder.getEncoderTable())
+		this._encoderTables = this._decoderTrees.map((decoder) => decoder.getEncoderTable())
 
 		// Calculate padding bits
 		this._paddingBits = _desc.groups.map((group, i) => {

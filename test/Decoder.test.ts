@@ -26,7 +26,6 @@ describe('Decoder', () => {
 			groups: [
 				{
 					lanes: 1,
-					decoder: new DecoderTree(entries, modeSizes),
 					ops: entries,
 				}
 			],
@@ -78,7 +77,6 @@ describe('Decoder', () => {
 			groups: [
 				{
 					lanes: 1,
-					decoder: new DecoderTree(entries, modeSizes),
 					ops: entries,
 				}
 			],
@@ -128,7 +126,6 @@ describe('Decoder', () => {
 			groups: [
 				{
 					lanes: 4,
-					decoder: new DecoderTree(entries, modeSizes),
 					ops: entries,
 				}
 			],

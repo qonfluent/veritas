@@ -1,5 +1,5 @@
 import assert from "assert"
-import { CacheDesc, CacheInput, CacheOp, CacheUnit } from "./Cache"
+import { CacheDesc, CacheEvictionData, CacheInput, CacheOp, CacheReadInput, CacheUnit, CacheWriteInput } from "./Cache"
 import { DecoderBlockDesc, DecoderBlockUnit } from "./DecoderBlock"
 
 export type CoreDesc = {
@@ -8,99 +8,97 @@ export type CoreDesc = {
 }
 
 export type CoreInput = {
-	l2Cache?: CacheInput
+	cacheWrite?: CacheInput
 }
+
 export type CoreOutput = {
 	l3Cache?: CacheInput
 }
 
-export enum CoreState {
-	Init,
-	Exec,
-	Stall,
-}
-
 export class CoreUnit {
-	private readonly _decoders: DecoderBlockUnit[]
+	private readonly _decoders: {
+		decoder: DecoderBlockUnit
+		missResponse?: CacheWriteInput
+		stall: boolean
+	}[]
 	private readonly _l2Cache: CacheUnit
-	private _state: CoreState
 	private readonly _addressShiftBits: number
+	private readonly _l3Buffer: CacheInput[] = []
 
 	public constructor(
 		private readonly _desc: CoreDesc,
 	) {
-		this._decoders = _desc.decoders.map((desc) => new DecoderBlockUnit(desc))
+		this._decoders = _desc.decoders.map((desc) => ({ decoder: new DecoderBlockUnit(desc), stall: false }))
 		this._l2Cache = new CacheUnit(_desc.l2cache)
-		this._state = CoreState.Init
 		this._addressShiftBits = Math.ceil(Math.log2(Math.ceil(_desc.l2cache.widthBits / 8)))
 	}
 
 	public step(input?: CoreInput): CoreOutput | undefined {
-		switch (this._state) {
-			case CoreState.Init: {
-				// Step each decoder and generate per-decoder outputs
-				const result: (CacheInput | undefined)[] = this._decoders.map((decoder) => {
-					// Step decoder
-					const init = decoder.step()
+		// Update cache, generating potential evict
+		const mainEvict = input?.cacheWrite === undefined ? undefined : this.handleCacheWrite(input.cacheWrite)
+		assert(mainEvict !== undefined)
+		assert(mainEvict.op === CacheOp.Write)
 
-					// Validate init result
-					assert(init !== undefined)
-					assert(init.l2Cache !== undefined)
-					assert(init.decoded === undefined)
+		// Update each decoder
+		const results = this._decoders.map(({ decoder, missResponse, stall }) => stall ? undefined : decoder.step({ cacheWrite: missResponse }))
 
-					return this.updateL2(init.l2Cache, decoder)
-				})
+		// TODO: Perform dispatch of decoded operations here!
 
-				// Merge cache updates
+		// Handle evictions
+		const resultEvicts: CacheEvictionData[] = results.flatMap((evict) => {
+			if (evict?.cacheEvict !== undefined) {
+				const result = this._l2Cache.step(evict.cacheEvict)
+				assert(result !== undefined)
+				assert(result.op === CacheOp.Write)
 
-				// Return
-				this._state = CoreState.Exec
-
-				return {}
+				return result.evicted ? [result.evicted] : []
 			}
-			case CoreState.Exec: {
-				const result: (CacheInput | undefined)[] = this._decoders.map((decoder) => {
-					const result = decoder.step()
-					return result?.l2Cache
-				})
 
-				return undefined
+			return []
+		})
+
+		// Handle misses
+		const resultMisses: CacheReadInput[] = this._decoders.flatMap((_, i) => {
+			const cacheMiss = results[i]?.cacheMiss
+			if (cacheMiss !== undefined) {
+				// Read L2
+				const response = this._l2Cache.step()
+				assert(response !== undefined)
+				assert(response.op === CacheOp.Read)
+
+				// Handle L2 miss
+				if (response.data === undefined) {
+					this._decoders[i].missResponse = undefined
+					this._decoders[i].stall = true
+					return [{ op: CacheOp.Read, address: cacheMiss.address, widthBytes: cacheMiss.widthBytes }]
+				}
+
+				this._decoders[i].missResponse = { op: CacheOp.Write, address: cacheMiss.address, data: response.data }
+			} else {
+				this._decoders[i].missResponse = undefined
 			}
-			case CoreState.Stall: {
-				return undefined
-			}
-		}
+
+			return []
+		})
+
+		// Merge evicts and misses onto pending L3 op buffer
+		const l3Writes: CacheInput[] = resultEvicts.map(({ address, data }) => ({ op: CacheOp.Write, address, data }))
+		this._l3Buffer.push(...l3Writes)
+		this._l3Buffer.push(...resultMisses)
+
+		// Return
+		const [cacheResult] = this._l3Buffer.splice(0, 1)
+		return { l3Cache: cacheResult }
 	}
 
-	private updateL2(update: CacheInput, decoder: DecoderBlockUnit): CacheInput | undefined {
-		assert(update.op === CacheOp.Read)
+	private handleCacheWrite(input: CacheInput): CacheWriteInput | undefined {
+		assert(input.op === CacheOp.Write)
 
-		// Perform L2 read
-		const read = this._l2Cache.step({ op: CacheOp.Read, address: update.address >> this._addressShiftBits, widthBytes: update.widthBytes })
-		assert(read !== undefined)
-		assert(read.op === CacheOp.Read)
+		// Step the cache with the input
+		const result = this._l2Cache.step(input)
+		assert(result !== undefined)
+		assert(result.op === CacheOp.Write)
 
-		// Handle miss
-		if (read.data === undefined) {
-			this._state = CoreState.Stall
-			return { op: CacheOp.Read, address: update.address, widthBytes: update.widthBytes }
-		}
-
-		// Write back to L1
-		const l1Write = decoder.step({ l2Cache: { op: CacheOp.Write, address: update.address, data: read.data }})
-		assert(l1Write !== undefined)
-		
-		// Handle displacement
-		// TODO: Handle this earlier by including the evicted line with the read request
-		if (l1Write.l2Cache) {
-			assert(l1Write.l2Cache.op === CacheOp.Write)
-			const l2Write = this._l2Cache.step(l1Write.l2Cache)
-			assert(l2Write !== undefined)
-			assert(l2Write.op === CacheOp.Write)
-
-			return l2Write.evicted === undefined ? undefined : { op: CacheOp.Write, address: l2Write.evicted.address, data: l2Write.evicted.data }
-		}
-
-		return undefined
+		return result.evicted === undefined ? undefined : { op: CacheOp.Write, address: result.evicted.address, data: result.evicted.data }
 	}
 }

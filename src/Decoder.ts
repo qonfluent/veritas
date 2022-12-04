@@ -7,7 +7,6 @@ import { BitstreamReader } from "@astronautlabs/bitstream"
 
 export type InstructionGroupDesc = {
 	lanes: number
-	decoder: DecoderTree
 	ops: OperationDesc[]
 }
 
@@ -57,11 +56,16 @@ export class DecoderUnit {
 	// Padding bits
 	private readonly _paddingBits: number[][]
 
+	private readonly _decoderTrees: DecoderTree[]
+
 	public constructor(
 		private readonly _desc: DecoderDesc,
 	) {
+		// Set up decoder trees
+		this._decoderTrees = _desc.groups.map((desc) => new DecoderTree(desc.ops, _desc.modeSizes))
+
 		// Calculate format widths
-		this._formatWidths = _desc.groups.map((group) => group.decoder.getMaxTotalWidth())
+		this._formatWidths = this._decoderTrees.map((decoder) => decoder.getMaxTotalWidth())
 
 		// Calculate header bit count
 		this._countBits = _desc.groups.map((group) => Math.ceil(Math.log2(group.lanes)))
@@ -73,7 +77,7 @@ export class DecoderUnit {
 		this._shiftOffset = Math.ceil(totalBits / 8)
 
 		// Get encoder tables
-		const encoderTables = this._desc.groups.map((group) => group.decoder.getEncoderTable())
+		const encoderTables = this._decoderTrees.map((decoder) => decoder.getEncoderTable())
 
 		// Calculate padding bits
 		this._paddingBits = _desc.groups.map((group, i) => {
@@ -111,6 +115,7 @@ export class DecoderUnit {
 		for (let i = 0; i < groupCount; i++) {
 			// Get group description
 			const group = this._desc.groups[i]
+			const decoder = this._decoderTrees[i]
 
 			// Add new group
 			ops.push([])
@@ -118,7 +123,7 @@ export class DecoderUnit {
 			// Add group members up to count
 			for (let j = 0; j < counts[i]; j++) {
 				// Lookup opcode
-				const opcode = group.decoder.lookup(reader)
+				const opcode = decoder.lookup(reader)
 
 				// Discard padding bits
 				reader.readSync(this._paddingBits[i][opcode])
