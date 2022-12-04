@@ -63,6 +63,7 @@ describe('DecoderBlock', () => {
 			],
 		}
 
+		// Step decoder block
 		const encoder = new Encoder(blockDesc.decoder)
 		const encIns = encoder.encodeInstruction(instruction)
 		const data = new Uint8Array([...encIns, ...[...Array(cacheWidthBytes - encIns.length)].map(() => 0)])
@@ -78,5 +79,6 @@ describe('DecoderBlock', () => {
 
 		const decodeStep = decoderBlock.step()
 		expect(decodeStep?.decoded).toEqual(instruction)
+		expect(decoderBlock.ip).toBe(encIns.length)
 	})
 })

@@ -1,5 +1,5 @@
 import assert from "assert"
-import { CacheReadInput, CacheWriteInput, CacheDesc, CacheUnit, CacheOp, CacheInput, CacheEvictionData } from "./Cache"
+import { CacheReadInput, CacheWriteInput, CacheDesc, CacheUnit, CacheOp, CacheInput, CacheEvictionData, Address } from "./Cache"
 import { DecoderDesc, Instruction, DecoderUnit } from "./Decoder"
 
 export type L2CacheInput = (CacheReadInput & { widthBytes: number }) | CacheWriteInput
@@ -49,6 +49,10 @@ export class DecoderBlockUnit {
 
 	public get state(): DecoderBlockState {
 		return this._state
+	}
+
+	public get ip(): Address {
+		return this._ip
 	}
 
 	public step(input?: DecoderBlockInput): DecoderBlockOutput | undefined {
