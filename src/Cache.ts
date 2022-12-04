@@ -14,25 +14,35 @@ export enum CacheOp {
 	Write,
 }
 
-export type CacheInput = {
+export type CacheReadInput = {
 	op: CacheOp.Read
 	address: Address
-} | {
+}
+
+export type CacheWriteInput = {
 	op: CacheOp.Write
 	address: Address
 	data: Uint8Array
 }
 
-export type CacheOutput = {
+export type CacheInput = CacheReadInput | CacheWriteInput
+
+export type CacheReadOutput = {
 	op: CacheOp.Read
 	data?: Uint8Array
-} | {
-	op: CacheOp.Write
-	evicted?: {
-		address: Address
-		data: Uint8Array
-	}
 }
+
+export type CacheEvictionData = {
+	address: Address
+	data: Uint8Array
+}
+
+export type CacheWriteOutput = {
+	op: CacheOp.Write
+	evicted?: CacheEvictionData
+}
+
+export type CacheOutput = CacheReadOutput | CacheWriteOutput
 
 export type CacheLine = {
 	valid: boolean
