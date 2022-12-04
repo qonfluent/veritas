@@ -1,8 +1,6 @@
 import assert from "assert"
-import { CacheReadInput, CacheWriteInput, CacheDesc, CacheUnit, CacheOp, CacheInput, CacheEvictionData, Address } from "./Cache"
+import { CacheDesc, CacheUnit, CacheOp, CacheInput, Address } from "./Cache"
 import { DecoderDesc, Instruction, DecoderUnit } from "./Decoder"
-
-export type L2CacheInput = (CacheReadInput & { widthBytes: number }) | CacheWriteInput
 
 export type DecoderBlockDesc = {
 	icache: CacheDesc
@@ -10,15 +8,12 @@ export type DecoderBlockDesc = {
 }
 
 export type DecoderBlockInput = {
-	cacheFill?: CacheInput
+	l2Cache?: CacheInput
 }
 
 export type DecoderBlockOutput = {
 	decoded?: Instruction
-	cacheMiss?: L2CacheInput
-	cacheWrite?: {
-		evicted?: CacheEvictionData
-	}
+	l2Cache?: CacheInput
 }
 
 export enum DecoderBlockState {
@@ -56,11 +51,12 @@ export class DecoderBlockUnit {
 	}
 
 	public step(input?: DecoderBlockInput): DecoderBlockOutput | undefined {
+		// TODO: Split up the shifter refill from the decode, so we can do both at once and simplify the core's step cycle
 		switch (this._state) {
 			case DecoderBlockState.Init: {
 				// Do initial icache read
 				// TODO: Handle latency here
-				const initRead = this._icache.step({ op: CacheOp.Read, address: this._ip >> this._ipShiftBits })
+				const initRead = this._icache.step({ op: CacheOp.Read, address: this._ip >> this._ipShiftBits, widthBytes: this._cacheWidthBytes })
 				assert(initRead !== undefined && initRead.op === CacheOp.Read)
 
 				// Handle icache miss
@@ -89,12 +85,12 @@ export class DecoderBlockUnit {
 			case DecoderBlockState.Stall: {
 				// Validate input
 				assert(input !== undefined)
-				assert(input.cacheFill !== undefined)
-				assert(input.cacheFill.op === CacheOp.Write)
-				assert(input.cacheFill.address === (this._ip & (0xFFFFFFFF << this._ipShiftBits)))
+				assert(input.l2Cache !== undefined)
+				assert(input.l2Cache.op === CacheOp.Write)
+				assert(input.l2Cache.address === (this._ip & (0xFFFFFFFF << this._ipShiftBits)))
 
 				// Step the cache with the input
-				const result = this._icache.step(input.cacheFill)
+				const result = this._icache.step(input.l2Cache)
 				assert(result !== undefined)
 				assert(result.op === CacheOp.Write)
 
@@ -103,7 +99,7 @@ export class DecoderBlockUnit {
 				
 				this._state = DecoderBlockState.Decode
 
-				return { cacheWrite: { evicted: result.evicted }}
+				return result.evicted === undefined ? {} : { l2Cache: { op: CacheOp.Write, address: result.evicted.address, data: result.evicted.data } }
 			}
 		}
 	}
@@ -114,7 +110,7 @@ export class DecoderBlockUnit {
 		if (this._shifter.length < this._cacheWidthBytes) {
 			// Read next line from icache
 			// TODO: Handle latency, wider shifter?
-			const read = this._icache.step({ op: CacheOp.Read, address: this._ip >> this._ipShiftBits })
+			const read = this._icache.step({ op: CacheOp.Read, address: this._ip >> this._ipShiftBits, widthBytes: this._cacheWidthBytes })
 			assert(read !== undefined && read.op === CacheOp.Read)
 
 			// Handle icache miss
@@ -136,6 +132,6 @@ export class DecoderBlockUnit {
 
 		// Mask out lower bits of IP to get actual read address
 		const maskedIp = this._ip & (0xFFFFFFFF << this._ipShiftBits)
-		return { cacheMiss: { op: CacheOp.Read, address: maskedIp, widthBytes: this._cacheWidthBytes } }
+		return { l2Cache: { op: CacheOp.Read, address: maskedIp, widthBytes: this._cacheWidthBytes } }
 	}
 }

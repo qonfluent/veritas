@@ -17,6 +17,7 @@ export enum CacheOp {
 export type CacheReadInput = {
 	op: CacheOp.Read
 	address: Address
+	widthBytes: number
 }
 
 export type CacheWriteInput = {

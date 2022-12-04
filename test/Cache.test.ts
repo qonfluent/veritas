@@ -29,6 +29,7 @@ describe('Cache', () => {
 		const read = cache.step({
 			op: CacheOp.Read,
 			address: 0,
+			widthBytes: testData[1].length,
 		})
 
 		expect(read).toEqual({ op: CacheOp.Read, data: testData[0] })
@@ -46,6 +47,7 @@ describe('Cache', () => {
 		const read = cache.step({
 			op: CacheOp.Read,
 			address: 0,
+			widthBytes: testData[1].length,
 		})
 
 		expect(read).toEqual({ op: CacheOp.Read, data: testData[1] })
@@ -63,6 +65,7 @@ describe('Cache', () => {
 		const failRead = cache.step({
 			op: CacheOp.Read,
 			address: 0,
+			widthBytes: testData[1].length,
 		})
 
 		expect(failRead).toEqual({ op: CacheOp.Read })
@@ -70,6 +73,7 @@ describe('Cache', () => {
 		const read = cache.step({
 			op: CacheOp.Read,
 			address: 4,
+			widthBytes: testData[1].length,
 		})
 
 		expect(read).toEqual({ op: CacheOp.Read, data: testData[2] })

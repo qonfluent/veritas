@@ -47,7 +47,7 @@ describe('DecoderBlock', () => {
 
 		// Perform init step
 		const initStep = decoderBlock.step()
-		expect(initStep).toEqual({ cacheMiss: { op: CacheOp.Read, address: 0, widthBytes: cacheWidthBytes }})
+		expect(initStep).toEqual({ l2Cache: { op: CacheOp.Read, address: 0, widthBytes: cacheWidthBytes }})
 		
 		// Perform cache fill using encoded instruction
 		const instruction: Instruction = {
@@ -68,14 +68,14 @@ describe('DecoderBlock', () => {
 		const encIns = encoder.encodeInstruction(instruction)
 		const data = new Uint8Array([...encIns, ...[...Array(cacheWidthBytes - encIns.length)].map(() => 0)])
 		const fillStep = decoderBlock.step({
-			cacheFill: {
+			l2Cache: {
 				op: CacheOp.Write,
 				address: 0,
 				data,
 			}
 		})
 
-		expect(fillStep).toEqual({ cacheWrite: {} })
+		expect(fillStep).toEqual({})
 
 		const decodeStep = decoderBlock.step()
 		expect(decodeStep?.decoded).toEqual(instruction)
