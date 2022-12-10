@@ -1,8 +1,8 @@
-import { CacheOp } from "../src/Cache"
-import { Instruction } from "../src/Decoder"
-import { DecoderBlockDesc, DecoderBlockUnit } from "../src/DecoderBlock"
-import { Encoder } from "../src/Encoder"
-import { ModeSizeMap, ArgMode, OperationDesc } from "../src/Operation"
+import { CacheOp } from "../../src/processor/Cache"
+import { Instruction } from "../../src/processor/Decoder"
+import { DecoderBlockDesc, DecoderBlockUnit } from "../../src/processor/DecoderBlock"
+import { Encoder } from "../../src/processor/Encoder"
+import { ModeSizeMap, ArgMode, OperationDesc } from "../../src/processor/Operation"
 
 describe('DecoderBlock', () => {
 	it('Can be created', () => {

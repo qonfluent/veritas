@@ -1,5 +1,4 @@
-import assert from "assert"
-import { CacheOp, CacheUnit } from "../src/Cache"
+import { CacheOp, CacheUnit } from "../../src/processor/Cache"
 
 const TEST_DATA_COUNT = 10
 

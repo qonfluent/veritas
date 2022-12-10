@@ -15,6 +15,12 @@ export type CoreOutput = {
 	l3Cache?: CacheInput
 }
 
+export type CoreInfo = {
+	decoders: {
+		ip: number
+	}[]
+}
+
 export class CoreUnit {
 	private readonly _decoders: {
 		decoder: DecoderBlockUnit
@@ -33,14 +39,29 @@ export class CoreUnit {
 		this._addressShiftBits = Math.ceil(Math.log2(Math.ceil(_desc.l2cache.widthBits / 8)))
 	}
 
+	public get info(): CoreInfo {
+		return {
+			decoders: this._decoders.map(({ decoder }) => {
+				return {
+					ip: decoder.ip,
+				}
+			}),
+		}
+	}
+
 	public step(input?: CoreInput): CoreOutput | undefined {
 		// Update cache, generating potential evict
-		const mainEvict = input?.cacheWrite === undefined ? undefined : this.handleCacheWrite(input.cacheWrite)
-		assert(mainEvict !== undefined)
-		assert(mainEvict.op === CacheOp.Write)
+		if (input?.cacheWrite !== undefined) {
+			const writeEvict = this.handleCacheWrite(input.cacheWrite)
+			if (writeEvict !== undefined) {
+				this._l3Buffer.push(writeEvict)
+			}
+		}
 
 		// Update each decoder
 		const results = this._decoders.map(({ decoder, missResponse, stall }) => stall ? undefined : decoder.step({ cacheWrite: missResponse }))
+		console.log(JSON.stringify(results))
+		console.log(`IP: ${this._decoders.map((x) => x.decoder.ip)}`)
 
 		// TODO: Perform dispatch of decoded operations here!
 
@@ -60,24 +81,23 @@ export class CoreUnit {
 		// Handle misses
 		const resultMisses: CacheReadInput[] = this._decoders.flatMap((_, i) => {
 			const cacheMiss = results[i]?.cacheMiss
-			if (cacheMiss !== undefined) {
-				// Read L2
-				const response = this._l2Cache.step()
-				assert(response !== undefined)
-				assert(response.op === CacheOp.Read)
-
-				// Handle L2 miss
-				if (response.data === undefined) {
-					this._decoders[i].missResponse = undefined
-					this._decoders[i].stall = true
-					return [{ op: CacheOp.Read, address: cacheMiss.address, widthBytes: cacheMiss.widthBytes }]
-				}
-
-				this._decoders[i].missResponse = { op: CacheOp.Write, address: cacheMiss.address, data: response.data }
-			} else {
-				this._decoders[i].missResponse = undefined
+			this._decoders[i].missResponse = undefined
+			if (cacheMiss === undefined) {
+				return []
 			}
 
+			// Read L2
+			const response = this._l2Cache.step({ op: CacheOp.Read, address: cacheMiss.address >> this._addressShiftBits, widthBytes: cacheMiss.widthBytes })
+			assert(response !== undefined)
+			assert(response.op === CacheOp.Read)
+
+			// Handle L2 miss
+			if (response.data === undefined) {
+				this._decoders[i].stall = true
+				return [{ op: CacheOp.Read, address: cacheMiss.address, widthBytes: cacheMiss.widthBytes }]
+			}
+
+			this._decoders[i].missResponse = { op: CacheOp.Write, address: cacheMiss.address, data: response.data }
 			return []
 		})
 

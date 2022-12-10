@@ -102,6 +102,7 @@ export class DecoderUnit {
 
 		// Load shift
 		const shift = reader.readSync(this._desc.shiftBits) + this._shiftOffset
+		assert(shift >= 1)
 
 		// Load count header bits
 		const groupCount = this._desc.groups.length

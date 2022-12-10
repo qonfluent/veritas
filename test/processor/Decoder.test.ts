@@ -1,8 +1,7 @@
-import { DecoderUnit, Instruction, InstructionSetDesc } from '../src/Decoder'
-import { Encoder } from '../src/Encoder'
-import { DecoderTree } from '../src/DecoderTree'
-import { ArgMode, ArgType, ModeSizeMap, OperationDesc } from '../src/Operation'
-import { DataTag } from '../src/Types'
+import { DecoderUnit, Instruction, InstructionSetDesc } from '../../src/processor/Decoder'
+import { Encoder } from '../../src/processor/Encoder'
+import { ArgMode, ArgType, ModeSizeMap, OperationDesc } from '../../src/processor/Operation'
+import { DataTag } from '../../src/processor/Types'
 
 describe('Decoder', () => {
 	it('Can decode simple entry', () => {

@@ -21,6 +21,7 @@ export class DecoderBlockUnit {
 	private _ip: number = 0
 	private _shifter: Uint8Array = new Uint8Array()
 	private _cacheWidthBytes: number
+	private _instructionWidthBytes: number
 	private _ipShiftBits: number
 	private readonly _icache: CacheUnit
 	private readonly _decoder: DecoderUnit
@@ -34,6 +35,7 @@ export class DecoderBlockUnit {
 		this._ipShiftBits = Math.ceil(Math.log2(this._cacheWidthBytes))
 		this._icache = new CacheUnit(_desc.icache)
 		this._decoder = new DecoderUnit(_desc.decoder)
+		this._instructionWidthBytes = this._decoder.getMaxInstructionWidth()
 	}
 
 	public get ip(): Address {
@@ -86,6 +88,10 @@ export class DecoderBlockUnit {
 			}
 
 			this._shifter = new Uint8Array([...this._shifter, ...read.data])
+		}
+
+		if (this._shifter.length < this._instructionWidthBytes) {
+			throw new Error('Oof')
 		}
 
 		return undefined

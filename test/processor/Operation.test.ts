@@ -1,5 +1,5 @@
-import { ArgMode, OperationalUnit } from '../src/Operation'
-import { DataTag, DataType } from '../src/Types'
+import { ArgMode, OperationalUnit } from '../../src/processor/Operation'
+import { DataTag, DataType } from '../../src/processor/Types'
 
 describe('Operation', () => {
 	it('Adder works', () => {
