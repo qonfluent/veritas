@@ -2,7 +2,6 @@ import assert from "assert"
 import { DecoderTree } from "./DecoderTree"
 import { ArgValue, ModeSizeMap, OperationDesc } from "./Operation"
 import { OpcodeType } from "./Types"
-import StreamBuffers from 'stream-buffers'
 import { BitstreamReader } from "@astronautlabs/bitstream"
 
 export type InstructionGroupDesc = {
@@ -13,7 +12,6 @@ export type InstructionGroupDesc = {
 export type InstructionSetDesc = {
 	shiftBits: number
 	groups: InstructionGroupDesc[]
-	modeSizes: ModeSizeMap
 }
 
 export type Operation = {
@@ -60,9 +58,10 @@ export class DecoderUnit {
 
 	public constructor(
 		private readonly _desc: DecoderDesc,
+		private readonly _modeSizes: ModeSizeMap,
 	) {
 		// Set up decoder trees
-		this._decoderTrees = _desc.groups.map((desc) => new DecoderTree(desc.ops, _desc.modeSizes))
+		this._decoderTrees = _desc.groups.map((desc) => new DecoderTree(desc.ops, _modeSizes))
 
 		// Calculate format widths
 		this._formatWidths = this._decoderTrees.map((decoder) => decoder.getMaxTotalWidth())
@@ -82,7 +81,7 @@ export class DecoderUnit {
 		// Calculate padding bits
 		this._paddingBits = _desc.groups.map((group, i) => {
 			return group.ops.map((op, opcode) => {
-				const argWidth = op.argTypes.reduce((accum, argType) => accum + _desc.modeSizes[argType.mode], 0)
+				const argWidth = op.argTypes.reduce((accum, argType) => accum + _modeSizes[argType.mode], 0)
 				const opcodeWidth = encoderTables[i].get(opcode)
 				assert(opcodeWidth !== undefined)
 
@@ -137,7 +136,7 @@ export class DecoderUnit {
 					const mode = argTypes[k].mode
 
 					// Get number of bits for mode
-					const bitCount = this._desc.modeSizes[mode]
+					const bitCount = this._modeSizes[mode]
 
 					// Add new argument
 					args.push({ mode, index: reader.readSync(bitCount) })

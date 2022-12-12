@@ -43,7 +43,7 @@ export class OperationalUnit {
 		private readonly _desc: OperationDesc,
 	) {}
 
-	public step(input?: OperationalUnitInput): OperationalUnitOutput {
+	public step(input?: OperationalUnitInput): OperationalUnitOutput | undefined {
 		if (this._startLatency > 0) {
 			this._startLatency--
 		}

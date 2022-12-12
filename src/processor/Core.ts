@@ -1,10 +1,14 @@
 import assert from "assert"
 import { CacheDesc, CacheEvictionData, CacheInput, CacheOp, CacheReadInput, CacheUnit, CacheWriteInput } from "./Cache"
 import { DecoderBlockDesc, DecoderBlockUnit } from "./DecoderBlock"
+import { DistributorDesc, DistributorUnit } from "./Distributor"
+import { ModeSizeMap } from "./Operation"
 
 export type CoreDesc = {
+	modeSizes: ModeSizeMap
 	decoders: DecoderBlockDesc[]
 	l2cache: CacheDesc
+	distributor: DistributorDesc
 }
 
 export type CoreInput = {
@@ -30,13 +34,15 @@ export class CoreUnit {
 	private readonly _l2Cache: CacheUnit
 	private readonly _addressShiftBits: number
 	private readonly _l3Buffer: CacheInput[] = []
+	private readonly _distributor: DistributorUnit
 
 	public constructor(
 		private readonly _desc: CoreDesc,
 	) {
-		this._decoders = _desc.decoders.map((desc) => ({ decoder: new DecoderBlockUnit(desc), stall: false }))
+		this._decoders = _desc.decoders.map((desc) => ({ decoder: new DecoderBlockUnit(desc, _desc.modeSizes), stall: false }))
 		this._l2Cache = new CacheUnit(_desc.l2cache)
 		this._addressShiftBits = Math.ceil(Math.log2(Math.ceil(_desc.l2cache.widthBits / 8)))
+		this._distributor = new DistributorUnit(_desc.distributor)
 	}
 
 	public get info(): CoreInfo {
@@ -59,14 +65,13 @@ export class CoreUnit {
 		}
 
 		// Update each decoder
-		const results = this._decoders.map(({ decoder, missResponse, stall }) => stall ? undefined : decoder.step({ cacheWrite: missResponse }))
-		console.log(JSON.stringify(results))
-		console.log(`IP: ${this._decoders.map((x) => x.decoder.ip)}`)
+		const decoded = this._decoders.map(({ decoder, missResponse, stall }) => stall ? undefined : decoder.step({ cacheWrite: missResponse }))
 
-		// TODO: Perform dispatch of decoded operations here!
+		// Perform operations
+		this._distributor.step(decoded.map((x) => x?.decoded === undefined ? undefined : x.decoded))
 
 		// Handle evictions
-		const resultEvicts: CacheEvictionData[] = results.flatMap((evict) => {
+		const resultEvicts: CacheEvictionData[] = decoded.flatMap((evict) => {
 			if (evict?.cacheEvict !== undefined) {
 				const result = this._l2Cache.step(evict.cacheEvict)
 				assert(result !== undefined)
@@ -80,7 +85,7 @@ export class CoreUnit {
 
 		// Handle misses
 		const resultMisses: CacheReadInput[] = this._decoders.flatMap((_, i) => {
-			const cacheMiss = results[i]?.cacheMiss
+			const cacheMiss = decoded[i]?.cacheMiss
 			this._decoders[i].missResponse = undefined
 			if (cacheMiss === undefined) {
 				return []

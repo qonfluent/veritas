@@ -1,6 +1,7 @@
 import assert from "assert"
 import { CacheDesc, CacheUnit, CacheOp, CacheInput, Address, CacheWriteInput, CacheReadInput } from "./Cache"
 import { DecoderDesc, Instruction, DecoderUnit } from "./Decoder"
+import { ModeSizeMap } from "./Operation"
 
 export type DecoderBlockDesc = {
 	icache: CacheDesc
@@ -28,13 +29,14 @@ export class DecoderBlockUnit {
 
 	public constructor(
 		private readonly _desc: DecoderBlockDesc,
+		modeSizes: ModeSizeMap,
 	) {
 		assert(_desc.icache.widthBits % 8 === 0)
 
 		this._cacheWidthBytes = _desc.icache.widthBits / 8
 		this._ipShiftBits = Math.ceil(Math.log2(this._cacheWidthBytes))
 		this._icache = new CacheUnit(_desc.icache)
-		this._decoder = new DecoderUnit(_desc.decoder)
+		this._decoder = new DecoderUnit(_desc.decoder, modeSizes)
 		this._instructionWidthBytes = this._decoder.getMaxInstructionWidth()
 	}
 

@@ -21,13 +21,16 @@ describe('Operation', () => {
 			startLatency: 1,
 			finishLatency: 1,
 			body: (args) => {
-				return [{ type: intType, value: args[0].value + args[1].value }]
+				if (args[0].tag !== DataTag.Int || args[1].tag !== DataTag.Int) {
+					throw new Error()
+				}
+				return [{ ...intType, value: args[0].value + args[1].value }]
 			}
 		})
 
-		const r0 = adder.step({ args: [{ type: intType, value: BigInt(1111) }, { type: intType, value: BigInt(2222) }] })
+		const r0 = adder.step({ args: [{ ...intType, value: BigInt(1111) }, { ...intType, value: BigInt(2222) }] })
 		expect(r0).toEqual({ result: undefined })
 		const r1 = adder.step()
-		expect(r1).toEqual({ result: [{ type: intType, value: BigInt(3333) }] })
+		expect(r1).toEqual({ result: [{ ...intType, value: BigInt(3333) }] })
 	})
 })
