@@ -28,9 +28,9 @@ describe('Operation', () => {
 			}
 		})
 
-		const r0 = adder.step({ args: [{ ...intType, value: BigInt(1111) }, { ...intType, value: BigInt(2222) }] })
-		expect(r0).toEqual({ result: undefined })
+		const r0 = adder.step({ target: 0, args: [{ ...intType, value: BigInt(1111) }, { ...intType, value: BigInt(2222) }] })
+		expect(r0).toEqual(undefined)
 		const r1 = adder.step()
-		expect(r1).toEqual({ result: [{ ...intType, value: BigInt(3333) }] })
+		expect(r1).toEqual({ target: 0, result: [{ ...intType, value: BigInt(3333) }] })
 	})
 })

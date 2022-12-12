@@ -1,4 +1,5 @@
 import assert from "assert"
+import { CoreDesc } from "./Core"
 import { Instruction, Operation } from "./Decoder"
 import { OperationDesc, OperationalUnit, ArgMode } from "./Operation"
 import { DataValue, DataTag, RegisterIndex } from "./Types"
@@ -17,6 +18,9 @@ export type MergeDesc = {
 	length: number
 }
 
+// RegisterMap[decoder][register] = core register index
+export type RegisterMap = number[][]
+
 export type DistributorDesc = {
 	units: {
 		op: OperationDesc
@@ -25,7 +29,7 @@ export type DistributorDesc = {
 	// TODO: Instead have a stall matrix to select what decoders to stall when
 	stallAll: boolean
 	unitMap: { groups: { lanes: { ops: UnitIndex[] }[] }[] }[]
-	regMap: number[][]
+	regMap: RegisterMap
 }
 
 export class DistributorUnit {
@@ -93,39 +97,50 @@ export class DistributorUnit {
 		})
 
 		// Apply merge strategies to each unit
-		const mergedOps: Map<UnitIndex, DataValue[]> = new Map()
+		const mergedOps: Map<UnitIndex, [DataValue[], RegisterIndex]> = new Map()
 		operations.forEach((args, unit) => {
-			let argsOut: DataValue[]
+			let argsOut: [DataValue[], RegisterIndex]
 
 			const merge = this._desc.units[unit].merge
 			switch (merge.tag) {
 				case MergeTag.Error: {
 					assert(args.length === 1)
-					argsOut = args[0]
+					argsOut = [args[0], 0]
 					break
 				}
 				case MergeTag.Queue: {
 					const queue = this._units[unit].queue
 					assert(queue.length + args.length - 1 <= merge.length)
 					queue.push(...args)
-					;[argsOut] = queue.splice(0, 1)
+					const [nextArgs] = queue.splice(0, 1)
+					argsOut = [nextArgs, 0]
 				}
 			}
 
 			mergedOps.set(unit, argsOut)
 		})
 
-		// Apply final result to each unit
-		const outputs = this._units.map(({ unit }, index) => {
-			const args = mergedOps.get(index)
-			const result = unit.step(args === undefined ? undefined : { args })
-			return result
+		// Apply final result to each unit and get write back results
+		const writeBack: Map<RegisterIndex, DataValue> = new Map()
+		this._units.forEach(({ unit }, unitIndex) => {
+			const args = mergedOps.get(unitIndex)
+			const result = unit.step(args === undefined ? undefined : { args: args[0], target: args[1] })
+			if (result !== undefined) {
+				result.result.forEach((value, resultIndex) => {
+					const target = result.target + resultIndex
+					if (writeBack.has(target)) {
+						throw new Error(`Attempt to write to register ${target} twice in the same cycle!`)
+					}
+
+					writeBack.set(target, value)
+				})
+			}
 		})
 
-		// Update registers with output
-		const newRegs = outputs.flatMap((output) => output === undefined ? [] : output.result)
-		this._regs.push(...newRegs)
-		this._regs.splice(0, newRegs.length)
+		// Write back results to registers
+		writeBack.forEach((value, reg) => {
+			this._regs[reg] = value
+		})
 	}
 
 	private translateArg(decoderIndex: number, op: Operation): DataValue[] {
