@@ -2,10 +2,8 @@ import assert from "assert"
 import { CacheDesc, CacheEvictionData, CacheInput, CacheOp, CacheReadInput, CacheUnit, CacheWriteInput } from "./Cache"
 import { DecoderBlockDesc, DecoderBlockUnit } from "./DecoderBlock"
 import { DistributorDesc, DistributorUnit } from "./Distributor"
-import { ModeSizeMap } from "./Operation"
 
 export type CoreDesc = {
-	modeSizes: ModeSizeMap
 	decoders: DecoderBlockDesc[]
 	l2cache: CacheDesc
 	distributor: DistributorDesc
@@ -39,7 +37,7 @@ export class CoreUnit {
 	public constructor(
 		private readonly _desc: CoreDesc,
 	) {
-		this._decoders = _desc.decoders.map((desc) => ({ decoder: new DecoderBlockUnit(desc, _desc.modeSizes), stall: false }))
+		this._decoders = _desc.decoders.map((desc) => ({ decoder: new DecoderBlockUnit(desc), stall: false }))
 		this._l2Cache = new CacheUnit(_desc.l2cache)
 		this._addressShiftBits = Math.ceil(Math.log2(Math.ceil(_desc.l2cache.widthBits / 8)))
 		this._distributor = new DistributorUnit(_desc.distributor)
@@ -85,24 +83,30 @@ export class CoreUnit {
 
 		// Handle misses
 		const resultMisses: CacheReadInput[] = this._decoders.flatMap((_, i) => {
+			// Load the cache miss and clear the response
 			const cacheMiss = decoded[i]?.cacheMiss
 			this._decoders[i].missResponse = undefined
 			if (cacheMiss === undefined) {
+				// No miss, continue
 				return []
 			}
 
-			// Read L2
+			// An L1 miss happened, read L2 to try to find a replacement line
 			const response = this._l2Cache.step({ op: CacheOp.Read, address: cacheMiss.address >> this._addressShiftBits, widthBytes: cacheMiss.widthBytes })
 			assert(response !== undefined)
 			assert(response.op === CacheOp.Read)
 
 			// Handle L2 miss
 			if (response.data === undefined) {
+				// Stall the decoder
+				// TODO: Add delay or more states to stall?
 				this._decoders[i].stall = true
 				return [{ op: CacheOp.Read, address: cacheMiss.address, widthBytes: cacheMiss.widthBytes }]
 			}
 
+			// Write L2 back to L1
 			this._decoders[i].missResponse = { op: CacheOp.Write, address: cacheMiss.address, data: response.data }
+
 			return []
 		})
 

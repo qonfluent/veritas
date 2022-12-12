@@ -27,10 +27,9 @@ export class Encoder {
 
 	public constructor(
 		private readonly _desc: DecoderDesc,
-		private readonly _modeSizes: ModeSizeMap
 	) {
 		// Set up decoder trees
-		this._decoderTrees = _desc.groups.map((desc) => new DecoderTree(desc.ops, _modeSizes))
+		this._decoderTrees = _desc.groups.map((desc) => new DecoderTree(desc.ops, _desc.modeSizes))
 
 		// Calculate format widths
 		this._formatWidths = this._decoderTrees.map((decoder) => decoder.getMaxTotalWidth())
@@ -50,7 +49,7 @@ export class Encoder {
 		// Calculate padding bits
 		this._paddingBits = _desc.groups.map((group, i) => {
 			return group.ops.map((op, opcode) => {
-				const argWidth = op.argTypes.reduce((accum, argType) => accum + _modeSizes[argType.mode], 0)
+				const argWidth = op.argTypes.reduce((accum, argType) => accum + _desc.modeSizes[argType.mode], 0)
 				const opcodeWidth = this._encoderTables[i].get(opcode)
 				assert(opcodeWidth !== undefined, 'Unknown opcode')
 
@@ -102,7 +101,7 @@ export class Encoder {
 				assert(op.args.length === expectedArgCount, `Expected ${expectedArgCount} arguments, got ${op.args.length}`)
 				for (let k = 0; k < op.args.length; k++) {
 					const arg = op.args[k]
-					result.write(this._modeSizes[arg.mode], arg.index)
+					result.write(this._desc.modeSizes[arg.mode], arg.index)
 				}
 			}
 		}

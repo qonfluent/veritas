@@ -10,9 +10,6 @@ describe('Core', () => {
 		const cacheWidthBytes = 64
 
 		const desc: CoreDesc = {
-			modeSizes: {
-				[ArgMode.Reg]: 4,
-			},
 			decoders: [
 				{
 					icache: {
@@ -23,6 +20,9 @@ describe('Core', () => {
 					},
 					decoder: {
 						shiftBits: 4,
+						modeSizes: {
+							[ArgMode.Reg]: 4,
+						},
 						groups: [
 							{
 								lanes: 1,
@@ -85,7 +85,7 @@ describe('Core', () => {
 
 		const core = new CoreUnit(desc)
 
-		const encoder = new Encoder(desc.decoders[0].decoder, desc.modeSizes)
+		const encoder = new Encoder(desc.decoders[0].decoder)
 		const encIns = encoder.encodeInstruction(instruction)
 		const data = new Uint8Array([...encIns, ...[...Array(cacheWidthBytes - encIns.length)].map(() => 0)])
 

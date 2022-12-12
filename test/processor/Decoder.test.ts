@@ -21,13 +21,14 @@ describe('Decoder', () => {
 
 		const decoder = new DecoderUnit({
 			shiftBits: 4,
+			modeSizes,
 			groups: [
 				{
 					lanes: 1,
 					ops: entries,
 				}
 			],
-		}, modeSizes)
+		})
 
 		const result = decoder.step({ instruction: new Uint8Array([0]) })
 		expect(result).toEqual({ shift: 1, decoded: { groups: [{ ops: [{ opcode: 0, args: [] }] }] } })
@@ -71,13 +72,14 @@ describe('Decoder', () => {
 
 		const decoder = new DecoderUnit({
 			shiftBits: 4,
+			modeSizes,
 			groups: [
 				{
 					lanes: 1,
 					ops: entries,
 				}
 			],
-		}, modeSizes)
+		})
 
 		const result = decoder.step({ instruction: new Uint8Array([0x00]) })
 		expect(result).toEqual({ shift: 1, decoded: { groups: [{ ops: [{ opcode: 0, args: [] }] }] } })
@@ -119,6 +121,7 @@ describe('Decoder', () => {
 
 		const desc: InstructionSetDesc = {
 			shiftBits: 4,
+			modeSizes,
 			groups: [
 				{
 					lanes: 4,
@@ -149,8 +152,8 @@ describe('Decoder', () => {
 			],
 		}
 
-		const encoder = new Encoder(desc, modeSizes)
-		const decoder = new DecoderUnit(desc, modeSizes)
+		const encoder = new Encoder(desc)
+		const decoder = new DecoderUnit(desc)
 
 		expect(encoder.encodeInstruction(testIns)).not.toEqual(encoder.encodeInstruction(testIns2))
 

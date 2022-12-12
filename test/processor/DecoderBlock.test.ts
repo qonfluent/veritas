@@ -31,6 +31,7 @@ describe('DecoderBlock', () => {
 			},
 			decoder: {
 				shiftBits: 4,
+				modeSizes,
 				groups: [
 					{
 						lanes: 1,
@@ -40,7 +41,7 @@ describe('DecoderBlock', () => {
 			},
 		}
 
-		const decoderBlock = new DecoderBlockUnit(blockDesc, modeSizes)
+		const decoderBlock = new DecoderBlockUnit(blockDesc)
 
 		// Perform init step
 		const initStep = decoderBlock.step()
