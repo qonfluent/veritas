@@ -1,4 +1,4 @@
-import { CacheOp, CacheUnit } from "../../src/processor/Cache"
+import { CacheOp, CacheUnit } from "../../src/simulator/Cache"
 
 const TEST_DATA_COUNT = 10
 

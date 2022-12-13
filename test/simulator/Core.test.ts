@@ -1,9 +1,9 @@
-import { CacheOp } from "../../src/processor/Cache"
-import { CoreDesc, CoreUnit } from "../../src/processor/Core"
-import { Instruction } from "../../src/processor/Decoder"
-import { MergeTag } from "../../src/processor/Distributor"
-import { Encoder } from "../../src/processor/Encoder"
-import { ArgMode } from "../../src/processor/Operation"
+import { CacheOp } from "../../src/simulator/Cache"
+import { CoreDesc, CoreUnit } from "../../src/simulator/Core"
+import { Instruction } from "../../src/simulator/Decoder"
+import { MergeTag } from "../../src/simulator/Distributor"
+import { Encoder } from "../../src/simulator/Encoder"
+import { ArgMode } from "../../src/simulator/Operation"
 
 describe('Core', () => {
 	it('Works', () => {
