@@ -1,8 +1,27 @@
+import { randomInt } from "crypto"
 import { CodeGenerator } from "gateware-ts"
-import { DecoderModule } from "../../src/processor/Decoder"
+import { DecoderDesc, DecoderModule } from "../../src/processor/Decoder"
 import { DecoderTreeModule, OperationDesc } from "../../src/processor/DecoderTree"
 import { BaseModule, PipelineDesc, PipelineModule } from "../../src/processor/Module"
 import { ArgType, DataTag, DataType } from "../../src/processor/Types"
+
+function randomOperationDesc(): OperationDesc {
+	return {
+		argTypes: [...Array(randomInt(5))].map(() => ArgType.Reg)
+	}
+}
+
+function randomDecoderDesc(opCount: number, opts?: { shiftBits: number, regSize: number }): DecoderDesc {
+	return {
+		shiftBits: opts?.shiftBits ?? randomInt(0, 7),
+		argSizes: [opts?.regSize ?? randomInt(2, 17)],
+		groups: [...Array(randomInt(1, 17))].map(() => ({
+			lanes: [...Array(randomInt(1, 17))].map(() => ({
+				ops: [...Array(randomInt(1, 1025))].map(() => randomInt(opCount)),
+			}))
+		})),
+	}
+}
 
 describe('Operational Unit', () => {
 	it('Base Module', () => {
@@ -57,64 +76,15 @@ describe('Operational Unit', () => {
 			}
 		]
 		const test = new DecoderTreeModule('test', ops, [4])
+
+		const cg = new CodeGenerator(test)
+		const verilog = cg.generateVerilogCodeForModule(test, false)
+		console.log(verilog)
 	})
 
-	it('Decoder', () => {
-		const test = new DecoderModule('test', {
-			shiftBits: 4,
-			argSizes: [4],
-			groups: [
-				{
-					lanes: [
-						{
-							ops: [0, 1, 2, 3],
-						},
-						{
-							ops: [0, 1, 2, 3],
-						},
-						{
-							ops: [0, 1, 2, 3],
-						},
-						{
-							ops: [0, 1, 2, 3],
-						},
-					]
-				},
-				{
-					lanes: [
-						{
-							ops: [0, 1, 2, 3],
-						},
-						{
-							ops: [0, 1, 2, 3],
-						},
-					]
-				},
-				{
-					lanes: [
-						{
-							ops: [0, 1, 2, 3],
-						},
-						{
-							ops: [0, 1, 2, 3],
-						},
-					]
-				}
-			],
-		}, [
-			{
-				argTypes: [ArgType.Reg, ArgType.Reg],
-			},
-			{
-				argTypes: [],
-			},
-			{
-				argTypes: [ArgType.Reg],
-			},
-			{
-				argTypes: [ArgType.Reg, ArgType.Reg],
-			},
-		])
+	it.only('Decoder', () => {
+		const units = [...Array(randomInt(10, 4097))].map(() => randomOperationDesc())
+		const test = new DecoderModule('test', randomDecoderDesc(units.length), units)
 
 		const cg = new CodeGenerator(test)
 		const verilog = cg.generateVerilogCodeForModule(test, false)

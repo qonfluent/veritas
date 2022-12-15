@@ -48,6 +48,21 @@ export function typeToSignal(type: DataType): SignalT {
 	}
 }
 
+export function  typeWidth(type: DataType): number {
+	switch (type.tag) {
+		case DataTag.Int:
+		case DataTag.Float: {
+			return type.width
+		}
+		case DataTag.Char: {
+			return 32
+		}
+		case DataTag.String: {
+			return 128
+		}
+	}
+}
+
 export type DataValueInt = DataTypeInt & {
 	value: number | bigint
 }
