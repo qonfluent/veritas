@@ -31,7 +31,6 @@ export class DecoderTreeModule extends GWModule {
 		opcodeWidth = Math.ceil(Math.log2(ops.length)),
 	) {
 		assert(ops.length >= 1)
-		assert(Math.pow(2, opcodeWidth) >= ops.length, `Got opcode width of ${opcodeWidth} with ${ops.length} units`)
 
 		super(name)
 

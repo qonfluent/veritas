@@ -1,4 +1,5 @@
-import { BlockStatement, Case, CombinationalLogic, Edge, GWModule, HIGH, If, Signal, SignalLikeOrValue, SignalT, SubjectiveCaseStatement, Switch } from 'gateware-ts'
+import assert from 'assert'
+import { BlockStatement, Case, CombinationalLogic, Constant, Edge, GWModule, HIGH, If, Signal, SignalLike, SignalLikeOrValue, SignalT, SubjectiveCaseStatement, Switch, Ternary } from 'gateware-ts'
 import { DecoderGroupDesc, DecoderGroupModule, DecoderGroupOutput } from './DecoderGroup'
 import { OperationDesc } from './DecoderTree'
 import { ArgSizeMap } from './Types'
@@ -36,6 +37,8 @@ export class DecoderModule extends GWModule {
 
 	private _laneCounts: SignalT[]
 
+	private _headerSize: number
+
 	public constructor(
 		name: string,
 		private readonly _desc: DecoderDesc,
@@ -55,9 +58,9 @@ export class DecoderModule extends GWModule {
 		})
 
 		// Calculate max instruction bytes
-		const headerSize = _desc.shiftBits + this._desc.groups.reduce((sum, { lanes }) => sum + Math.ceil(Math.log2(lanes.length)), 0)
+		this._headerSize = _desc.shiftBits + this._desc.groups.reduce((sum, { lanes }) => sum + Math.ceil(Math.log2(lanes.length)), 0)
 		const bodySize = this._groups.reduce((sum, { decoder }) => sum + decoder.instruction.width, 0)
-		const maxInstructionSize = headerSize + bodySize
+		const maxInstructionSize = this._headerSize + bodySize
 		const maxInstructionBytes = Math.ceil(maxInstructionSize / 8)
 
 		// Set up IO
@@ -104,21 +107,44 @@ export class DecoderModule extends GWModule {
 			})
 		})
 
-		// Combinational block
-		const logic: CombinationalLogic[] = []
+		this.combinationalLogic([
+			...this.connectLaneCounts(),
+			...this.connectGroupInputs(),
+		])
 
-		// Connect up lane counts
+		// Sync block
+		const allRegs = [this.shiftBytes]
+		this.syncBlock(this.clk, Edge.Negative, [
+			If(this.rst ['=='] (HIGH), [
+				...clearRegs(allRegs)
+			]).Else([
+				If(this.stall ['=='] (HIGH), [
+					...maintainRegs(allRegs)
+				]).Else([
+					this.shiftBytes ['='] (this.instruction.slice(0, this._desc.shiftBits - 1)),
+					...this.updateSteps()
+				])
+			])
+		])
+	}
+
+	private connectLaneCounts(): CombinationalLogic[] {
 		let index = this._desc.shiftBits
-		logic.push(...this._laneCounts.map((laneCount) => {
+		
+		return this._laneCounts.map((laneCount) => {
 			const result = laneCount ['='] (this.instruction.slice(index, index + laneCount.width - 1))
 			index += laneCount.width
 			return result
-		}))
+		})
+	}
+
+	private connectGroupInputs(): CombinationalLogic[] {
+		const logic: CombinationalLogic[] = []
 
 		// Connect up group zero
 		logic.push(
 			this._groups[0].laneCount ['='] (this._laneCounts[0]),
-			this._groups[0].instruction ['='] (this.instruction.slice(index, index + this._groups[0].instruction.width - 1)),
+			this._groups[0].instruction ['='] (this.instruction.slice(this._headerSize, this._headerSize + this._groups[0].instruction.width - 1)),
 		)
 
 		// Connect up remaining groups
@@ -137,43 +163,30 @@ export class DecoderModule extends GWModule {
 			}
 		}
 
-		this.combinationalLogic(logic)
-
-		// Sync block
-		const allRegs = [this.shiftBytes]
-		this.syncBlock(this.clk, Edge.Negative, [
-			If(this.rst ['=='] (HIGH), [
-				...clearRegs(allRegs)
-			]).Else([
-				If(this.stall ['=='] (HIGH), [
-					...maintainRegs(allRegs)
-				]).Else([
-					this.shiftBytes ['='] (this.instruction.slice(0, this._desc.shiftBits - 1)),
-					...this.updateSteps()
-				])
-			])
-		])
+		return logic
 	}
 
 	private updateSteps(): BlockStatement[] {
 		const block: BlockStatement[] = []
 
-		// Handle every step
-		const headerSize = this._desc.shiftBits + this._desc.groups.reduce((sum, { lanes }) => sum + lanes.length, 0)
+		// Handle lane counts
 		for (let i = 1, step = 0; i < this._groups.length; i += 2, step++) {
-			// TODO: Extract common logic for these two cases
 			if (step === 0) {
 				// Move lane counts forward in pipeline
-				block.push(
-					...this.forwardLaneCounts(this._laneCounts, this._steps[0], 1),
-					this.forwardInstruction(headerSize, this._laneCounts, i, this._steps[0].instruction, this.instruction),
-				)
+				block.push(...this.forwardLaneCounts(this._laneCounts, this._steps[0], 1))
 			} else {
 				// Move lane counts forward in pipeline
-				block.push(
-					...this.forwardLaneCounts(this._steps[step - 1].laneCounts, this._steps[step], 2),
-					this.forwardInstruction(this._groups[i - 2].instruction.width, this._steps[step - 1].laneCounts, i, this._steps[step].instruction, this._steps[step - 1].instruction),
-				)
+				block.push(...this.forwardLaneCounts(this._steps[step - 1].laneCounts, this._steps[step], 2))
+			}
+		}
+
+		// Handle instructions
+		const headerSize = this._desc.shiftBits + this._desc.groups.reduce((sum, { lanes }) => sum + lanes.length, 0)
+		for (let i = 1, step = 0; i < this._groups.length; i += 2, step++) {
+			if (step === 0) {
+				block.push(this.forwardInstruction(headerSize, this._laneCounts, i, this._steps[0].instruction, this.instruction))
+			} else {
+				block.push(this.forwardInstruction(this._groups[i - 2].instruction.width, this._steps[step - 1].laneCounts, i, this._steps[step].instruction, this._steps[step - 1].instruction))
 			}
 		}
 
@@ -193,35 +206,41 @@ export class DecoderModule extends GWModule {
 	// i is an odd number [1, 3, 5, ...]
 	private forwardInstruction(baseShift: number, laneCounts: SignalT[], i: number, targetIns: SignalT, sourceIns: SignalT): BlockStatement {
 		let shiftDown = baseShift
-		
-		return Switch(laneCounts[0], this._groups[i - 1].decoder.laneWidths.map((laneWidth, j) => {
+		const shiftTable = this._groups[i - 1].decoder.laneWidths.map((laneWidth) => {
 			shiftDown += laneWidth
 
 			const currentLaneWidths = this._groups[i].decoder.laneWidths
-
-			return Case(j, [
-				Switch(laneCounts[1], currentLaneWidths.flatMap((_, k) => {
-					const shiftUp = currentLaneWidths.filter((_, l) => l >= k).reduce((sum, val) => sum + val, 0)
-					const finalShift = shiftDown - shiftUp
-					return this.shiftSignedDir(targetIns, sourceIns, k, finalShift)
-				}))
-			])
-		}))
+			
+			return currentLaneWidths.map((_, k) => {
+				const shiftUp = currentLaneWidths.filter((_, l) => l >= k).reduce((sum, val) => sum + val, 0)
+				const finalShift = shiftDown - shiftUp
+				return this.shiftRightSignedDir(sourceIns, finalShift)
+			})
+		})
+		
+		return targetIns ['='] (this.indexTable2D(shiftTable, laneCounts))
 	}
 
-	private shiftSignedDir(target: SignalT, source: SignalT, sel: SignalLikeOrValue, shift: number): SubjectiveCaseStatement {
+	private indexTable2D(table: SignalLike[][], indexes: SignalLike[]): SignalLike {
+		assert(indexes.length >= 2)
+		return this.indexTable1D(table.map((row) => this.indexTable1D(row, indexes[1])), indexes[0])
+	}
+
+	private indexTable1D(table: SignalLike[], index: SignalLike, i = 0): SignalLike {
+		if (table.length === 1) {
+			return table[0]
+		}
+		
+		return Ternary(index ['=='] (i), table[0], this.indexTable1D(table.slice(1), index, i + 1))
+	}
+
+	private shiftRightSignedDir(source: SignalLike, shift: number): SignalLike {
 		if (shift > 0) {
-			return Case(sel, [
-				target ['='] (source ['>>'] (shift))
-			])
+			return source ['>>'] (shift)
 		} else if (shift < 0) {
-			return Case(sel, [
-				target ['='] (source ['<<'] (-shift))
-			])
+			return source ['<<'] (-shift)
 		} else {
-			return Case(sel, [
-				target ['='] (source)
-			])
-		}	
+			return source
+		}
 	}
 }
