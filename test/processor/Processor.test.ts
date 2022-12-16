@@ -16,7 +16,6 @@ function randomOperationDesc(): OperationDesc {
 function randomDecoderDesc(opCount: number, opts?: { shiftBits: number, regSize: number }): DecoderDesc {
 	return {
 		shiftBits: opts?.shiftBits ?? randomInt(0, 7),
-		argSizes: [opts?.regSize ?? randomInt(2, 17)],
 		groups: [...Array(randomInt(1, 17))].map(() => ({
 			lanes: [...Array(randomInt(1, 17))].map(() => ({
 				ops: [...Array(randomInt(1, 1025))].map(() => randomInt(opCount)),
@@ -73,13 +72,8 @@ describe('Operational Unit', () => {
 
 	it('Decoder tree', () => {
 		const intType: DataType = { tag: DataTag.Int, signed: false, width: 32 }
-		
-		const ops: OperationDesc[] = [
-			{
-				argTypes: [{ tag: ArgTag.Reg, type: intType }, { tag: ArgTag.Reg, type: intType }],
-				retTypes: []
-			}
-		]
+
+		const ops: OperationDesc[] = [...Array(randomInt(1, 65))].map(() => randomOperationDesc())
 		const test = new DecoderTreeModule('test', ops, [4])
 
 		const cg = new CodeGenerator(test)
@@ -87,9 +81,9 @@ describe('Operational Unit', () => {
 		console.log(verilog)
 	})
 
-	it.only('Decoder', () => {
+	it('Decoder', () => {
 		const units = [...Array(randomInt(10, 4097))].map(() => randomOperationDesc())
-		const test = new DecoderModule('test', randomDecoderDesc(units.length), units)
+		const test = new DecoderModule('test', randomDecoderDesc(units.length), units, [randomInt(2, 17)])
 
 		const cg = new CodeGenerator(test)
 		const verilog = cg.generateVerilogCodeForModule(test, false)
