@@ -2,6 +2,8 @@ import { ArgSizeMap, ArgType, DataType } from "./Types"
 
 // Index types to refer to parts of the processor
 export type UnitIndex = number
+export type LaneIndex = number
+export type GroupIndex = number
 export type DecoderIndex = number
 export type CoreIndex = number
 export type DeviceIndex = number
@@ -17,6 +19,7 @@ export type OperationDesc = {
 }
 
 // Units are combined into groups, where each group has a number of lanes
+// Each lane connects to a number of functional units
 export type DecoderGroupDesc = {
 	lanes: {
 		ops: UnitIndex[]
@@ -32,9 +35,15 @@ export type DecoderDesc = {
 // A cache has a certain width per row, a number of rows, and a number of ways
 // Total size = widthBytes * rows * ways
 // Access time = O(log2(rows))
-export type CacheDesc = {
+export type CacheWayDesc = {
+	addressBits: number
 	widthBytes: number
 	rows: number
+	readPorts: number
+	writePorts: number
+}
+
+export type CacheDesc = CacheWayDesc & {
 	ways: number
 }
 
@@ -62,6 +71,7 @@ export type CoreDesc = {
 }
 
 // Devices are memory mapped IO drivers, providing things like RAM access
+// They have access to an optional set of caches
 export type DeviceDesc = {
 	caches?: {
 		widthBytes: number
