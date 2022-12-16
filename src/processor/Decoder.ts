@@ -10,6 +10,11 @@ export type DecoderDesc = {
 	groups: DecoderGroupDesc[]
 }
 
+type DecoderStepInternal = {
+	laneCounts: SignalT[]
+	instruction: SignalT
+}
+
 export class DecoderModule extends GWModule {
 	public clk: SignalT = this.input(Signal())
 	public rst: SignalT = this.input(Signal())
@@ -27,10 +32,7 @@ export class DecoderModule extends GWModule {
 		instruction: SignalT
 	}[]
 
-	private _steps: {
-		laneCounts: SignalT[]
-		instruction: SignalT
-	}[] = []
+	private _steps: DecoderStepInternal[] = []
 
 	private _laneCounts: SignalT[]
 
@@ -159,52 +161,52 @@ export class DecoderModule extends GWModule {
 		// Handle every step
 		const headerSize = this._desc.shiftBits + this._desc.groups.reduce((sum, { lanes }) => sum + lanes.length, 0)
 		for (let i = 1, step = 0; i < this._groups.length; i += 2, step++) {
+			// TODO: Extract common logic for these two cases
 			if (step === 0) {
 				// Move lane counts forward in pipeline
-				for (let j = 0; j < this._groups.length - 1; j++) {
-					block.push(this._steps[0].laneCounts[j] ['='] (this._laneCounts[j + 1]))
-				}
-
-				// Move instructions forward in the pipeline
-				let shiftDown = headerSize
 				block.push(
-					Switch(this._laneCounts[0], this._groups[0].decoder.laneWidths.map((laneWidth, i) => {
-						shiftDown += laneWidth
-
-						return Case(i, [
-							Switch(this._laneCounts[1], this._groups[1].decoder.laneWidths.flatMap((_, j) => {
-								const shiftUp = this._groups[1].decoder.laneWidths.filter((_, k) => k >= j).reduce((sum, val) => sum + val, 0)
-								const finalShift = shiftDown - shiftUp
-								return this.shiftSignedDir(this._steps[0].instruction, this.instruction, j, finalShift)
-							}))
-						])
-					}))
+					...this.forwardLaneCounts(this._laneCounts, this._steps[0], 1),
+					this.forwardInstruction(headerSize, this._laneCounts, i, this._steps[0].instruction, this.instruction),
 				)
 			} else {
 				// Move lane counts forward in pipeline
-				for (let j = 0; j < this._steps[step - 1].laneCounts.length - 2; j++) {
-					block.push(this._steps[step].laneCounts[j] ['='] (this._steps[step - 1].laneCounts[j + 2]))
-				}
-
-				// Move instructions forward in the pipeline
-				let shiftDown = this._groups[i - 2].instruction.width
 				block.push(
-					Switch(this._steps[step - 1].laneCounts[0], this._groups[i - 1].decoder.laneWidths.map((laneWidth, i) => {
-						shiftDown += laneWidth
-
-						return Case(i, [
-							Switch(this._steps[step - 1].laneCounts[1], this._groups[i].decoder.laneWidths.map((_, j) => {
-								const shiftUp = this._groups[i].decoder.laneWidths.filter((_, k) => k >= j).reduce((sum, val) => sum + val, 0)
-								const finalShift = shiftDown - shiftUp
-								return this.shiftSignedDir(this._steps[step].instruction, this._steps[step - 1].instruction, j, finalShift)
-							}))
-						])
-					}))
+					...this.forwardLaneCounts(this._steps[step - 1].laneCounts, this._steps[step], 2),
+					this.forwardInstruction(this._groups[i - 2].instruction.width, this._steps[step - 1].laneCounts, i, this._steps[step].instruction, this._steps[step - 1].instruction),
 				)
 			}
 		}
 
 		return block
+	}
+
+	private forwardLaneCounts(source: SignalT[], step: DecoderStepInternal, sliceSize: number): BlockStatement[] {
+		const block: BlockStatement[] = []
+
+		for (let i = 0; i < step.laneCounts.length - sliceSize; i++) {
+			block.push(step.laneCounts[i] ['='] (source[i + sliceSize]))
+		}
+
+		return block
+	}
+
+	// i is an odd number [1, 3, 5, ...]
+	private forwardInstruction(baseShift: number, laneCounts: SignalT[], i: number, targetIns: SignalT, sourceIns: SignalT): BlockStatement {
+		let shiftDown = baseShift
+		
+		return Switch(laneCounts[0], this._groups[i - 1].decoder.laneWidths.map((laneWidth, j) => {
+			shiftDown += laneWidth
+
+			const currentLaneWidths = this._groups[i].decoder.laneWidths
+
+			return Case(j, [
+				Switch(laneCounts[1], currentLaneWidths.flatMap((_, k) => {
+					const shiftUp = currentLaneWidths.filter((_, l) => l >= k).reduce((sum, val) => sum + val, 0)
+					const finalShift = shiftDown - shiftUp
+					return this.shiftSignedDir(targetIns, sourceIns, k, finalShift)
+				}))
+			])
+		}))
 	}
 
 	private shiftSignedDir(target: SignalT, source: SignalT, sel: SignalLikeOrValue, shift: number): SubjectiveCaseStatement {
