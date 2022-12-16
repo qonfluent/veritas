@@ -112,8 +112,13 @@ export function encode(value: DataValue): ConstantT {
 	}
 }
 
-export enum ArgType {
+export enum ArgTag {
 	Reg,
 }
 
-export type ArgSizeMap = Record<ArgType, number>
+export type ArgType = {
+	tag: ArgTag
+	type: DataType
+}
+
+export type ArgSizeMap = Record<ArgTag, number>

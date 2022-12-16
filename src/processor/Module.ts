@@ -1,15 +1,11 @@
 import { SignalT, CombinationalLogic, GWModule, Signal, Edge, If, HIGH, Constant } from "gateware-ts"
-import { DataType, typeToSignal } from "./Types"
+import { OperationDesc } from "./Description"
+import { typeToSignal } from "./Types"
 
-export type ModuleDesc = {
-	argTypes: DataType[]
-	retTypes: DataType[]
-}
+export type OperationBody = (inputs: SignalT[], outputs: SignalT[]) => CombinationalLogic[]
 
-export type ModuleBody = (inputs: SignalT[], outputs: SignalT[]) => CombinationalLogic[]
-
-export type ModuleDescBody = ModuleDesc & {
-	body: ModuleBody
+export type OperationDescBody = OperationDesc & {
+	body: OperationBody
 }
 
 export abstract class IModule extends GWModule {
@@ -23,22 +19,22 @@ export abstract class IModule extends GWModule {
 
 	public constructor(
 		name: string,
-		desc: ModuleDesc,
+		desc: OperationDesc,
 	) {
 		super(name)
 
-		this.moduleIns = desc.argTypes.map((type, i) => this.createInput(`module_in_${i}`, typeToSignal(type)))
+		this.moduleIns = desc.argTypes.map((type, i) => this.createInput(`module_in_${i}`, typeToSignal(type.type)))
 		this.moduleOuts = desc.retTypes.map((type, i) => this.createOutput(`module_out_${i}`, typeToSignal(type)))
 	}
 }
 
 export class BaseModule extends IModule {
 	private _moduleLatches: SignalT[]
-	private _body: ModuleBody
+	private _body: OperationBody
 
 	public constructor(
 		name: string,
-		desc: ModuleDescBody,
+		desc: OperationDescBody,
 	) {
 		super(name, desc)
 
@@ -66,7 +62,7 @@ export class BaseModule extends IModule {
 }
 
 export type PipelineDesc = {
-	steps: ModuleDescBody[]
+	steps: OperationDescBody[]
 }
 
 export class PipelineModule extends IModule {
@@ -84,8 +80,8 @@ export class PipelineModule extends IModule {
 		})
 
 		this._modules = _desc.steps.map((step, i) => new BaseModule(_name + `_${i}`, step))
-		this._moduleIns = _desc.steps.map((step, i) => step.argTypes.map((type, j) => this.createInternal(`module_in_${i}_${j}`, typeToSignal(type))))
-		this._moduleOuts = _desc.steps.map((step, i) => step.argTypes.map((type, j) => this.createInternal(`module_out_${i}_${j}`, typeToSignal(type))))
+		this._moduleIns = _desc.steps.map((step, i) => step.argTypes.map((type, j) => this.createInternal(`module_in_${i}_${j}`, typeToSignal(type.type))))
+		this._moduleOuts = _desc.steps.map((step, i) => step.argTypes.map((type, j) => this.createInternal(`module_out_${i}_${j}`, typeToSignal(type.type))))
 	}
 
 	public describe(): void {

@@ -1,13 +1,8 @@
 import { SignalT, GWModule, Signal, Edge, If, HIGH } from "gateware-ts"
-import { UnitIndex, DecoderTreeModule, OperationDesc } from "./DecoderTree"
+import { DecoderTreeModule } from "./DecoderTree"
+import { DecoderGroupDesc, OperationDesc } from "./Description"
 import { ArgSizeMap } from "./Types"
 import { clearRegs, maintainRegs } from "./Utils"
-
-export type DecoderGroupDesc = {
-	lanes: {
-		ops: UnitIndex[]
-	}[]
-}
 
 export type DecoderGroupOutput = {
 	valid: SignalT

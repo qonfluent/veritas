@@ -1,12 +1,7 @@
 import assert from 'assert'
 import { GWModule, SignalT, Signal, Ternary, Constant, SignalLike } from 'gateware-ts'
-import { ArgSizeMap, ArgType } from './Types'
-
-export type UnitIndex = number
-
-export type OperationDesc = {
-	argTypes: ArgType[]
-}
+import { OperationDesc, UnitIndex } from './Description'
+import { ArgSizeMap } from './Types'
 
 type DecoderTreeInner = {
 	opcode: UnitIndex
@@ -35,7 +30,7 @@ export class DecoderTreeModule extends GWModule {
 		super(name)
 
 		// Get opcode arg widths
-		this._opcodeArgWidths = ops.map((op) => op.argTypes.reduce((accum, argType) => accum + this._argSizes[argType], 0))
+		this._opcodeArgWidths = ops.map((op) => op.argTypes.reduce((accum, argType) => accum + this._argSizes[argType.tag], 0))
 
 		// Handle one entry special case
 		if (ops.length === 1) {

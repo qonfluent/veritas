@@ -1,15 +1,8 @@
 import assert from 'assert'
-import { BlockStatement, Case, CombinationalLogic, Constant, Edge, GWModule, HIGH, If, Signal, SignalLike, SignalLikeOrValue, SignalT, SubjectiveCaseStatement, Switch, Ternary } from 'gateware-ts'
-import { DecoderGroupDesc, DecoderGroupModule, DecoderGroupOutput } from './DecoderGroup'
-import { OperationDesc } from './DecoderTree'
-import { ArgSizeMap } from './Types'
+import { BlockStatement, CombinationalLogic, Edge, GWModule, HIGH, If, Signal, SignalLike, SignalT, Ternary } from 'gateware-ts'
+import { DecoderGroupModule, DecoderGroupOutput } from './DecoderGroup'
+import { DecoderDesc, OperationDesc } from './Description'
 import { reverseBits, clearRegs, maintainRegs } from './Utils'
-
-export type DecoderDesc = {
-	shiftBits: number
-	argSizes: ArgSizeMap
-	groups: DecoderGroupDesc[]
-}
 
 type DecoderStepInternal = {
 	laneCounts: SignalT[]
