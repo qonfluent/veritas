@@ -60,8 +60,9 @@ export type CacheHierarchyDesc<T> = {
 }
 
 export type RegisterFileDesc = {
-	widthBytes: number
-	rows: number
+	registers: {
+		widthBits: number
+	}[]
 }
 
 // A core has a fixed set of decoders with a shared set of arg sizes(number of registers, etc)
@@ -69,8 +70,9 @@ export type RegisterFileDesc = {
 // Each unit is described in the description
 // The cache hierarchy for the core is matched against the unit descriptions to ensure each unit has the required ports
 export type CoreDesc = {
-	argSizes: ArgInfoMap
+	argInfo: ArgInfoMap
 	decoders: DecoderDesc[]
+	registers: RegisterFileDesc
 	units: OperationDesc[]
 	cache: CacheHierarchyDesc<{
 		decoders: DecoderIndex[]

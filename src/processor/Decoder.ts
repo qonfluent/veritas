@@ -14,8 +14,6 @@ export class DecoderModule extends GWModule {
 	public clk: SignalT = this.input(Signal())
 	public rst: SignalT = this.input(Signal())
 
-	public stall: SignalT = this.input(Signal())
-
 	public instruction: SignalT
 
 	public shiftBytes: SignalT
@@ -89,7 +87,6 @@ export class DecoderModule extends GWModule {
 				inputs: {
 					clk: this.clk,
 					rst: this.rst,
-					stall: this.stall,
 
 					laneCount,
 					instruction,
@@ -114,12 +111,8 @@ export class DecoderModule extends GWModule {
 			If(this.rst ['=='] (HIGH), [
 				...clearRegs(allRegs)
 			]).Else([
-				If(this.stall ['=='] (HIGH), [
-					...maintainRegs(allRegs)
-				]).Else([
-					this.shiftBytes ['='] (this.instruction.slice(0, this._desc.shiftBits - 1)),
-					...this.updateSteps()
-				])
+				this.shiftBytes ['='] (this.instruction.slice(0, this._desc.shiftBits - 1)),
+				...this.updateSteps()
 			])
 		])
 	}

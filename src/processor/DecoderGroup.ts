@@ -15,8 +15,6 @@ export class DecoderGroupModule extends GWModule {
 	public clk: SignalT = this.input(Signal())
 	public rst: SignalT = this.input(Signal())
 
-	public stall: SignalT = this.input(Signal())
-
 	public laneCount: SignalT
 	public instruction: SignalT
 
@@ -94,14 +92,10 @@ export class DecoderGroupModule extends GWModule {
 			If(this.rst ['=='] (HIGH), [
 				...clearRegs(allRegs)
 			]).Else([
-				If(this.stall ['=='] (HIGH), [
-					...maintainRegs(allRegs)
-				]).Else([
-					...this.lanes.flatMap(({ valid, opcode, args }, i) => [
-						valid ['='] (this._lanes[i].valid),
-						opcode ['='] (this._lanes[i].opcode),
-						args ['='] (this._lanes[i].args),
-					])
+				...this.lanes.flatMap(({ valid, opcode, args }, i) => [
+					valid ['='] (this._lanes[i].valid),
+					opcode ['='] (this._lanes[i].opcode),
+					args ['='] (this._lanes[i].args),
 				])
 			])
 		])
