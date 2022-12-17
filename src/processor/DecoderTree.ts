@@ -46,7 +46,7 @@ export class DecoderTreeModule extends GWModule {
 
 		while (sortedEntries.length > 2) {
 			const [{ decoder: zero, weight: zeroWeight }, { decoder: one, weight: oneWeight }] = sortedEntries.splice(0, 2)
-			const newNode = { decoder: { zero, one }, weight: zeroWeight + oneWeight }
+			const newNode = { decoder: { zero, one }, weight: 1 + Math.max(zeroWeight, oneWeight) }
 			// TODO: Use a log search here instead of a linear search!
 			const insertIndex = sortedEntries.findIndex(({ weight }) => weight > newNode.weight)
 			if (insertIndex !== -1) {

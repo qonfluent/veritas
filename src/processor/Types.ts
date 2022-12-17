@@ -130,11 +130,12 @@ export enum ArgHandler {
 
 export type ArgInfo = {
 	argBits: number
+} & ({
 	handler: ArgHandler.Immediate
 } | {
-	argBits: number
 	handler: ArgHandler.RegisterIndex
 	indexing: RegisterIndex[]
-}
+	prefix: string
+})
 
 export type ArgInfoMap = Record<ArgTag, ArgInfo>

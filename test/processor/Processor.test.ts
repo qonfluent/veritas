@@ -1,11 +1,11 @@
 import { randomInt } from "crypto"
 import { CodeGenerator } from "gateware-ts"
 import { CacheModule } from "../../src/processor/Cache"
+import { CacheControllerModule } from "../../src/processor/CacheController"
 import { DecoderModule } from "../../src/processor/Decoder"
 import { DecoderTreeModule } from "../../src/processor/DecoderTree"
-import { OperationDesc, DecoderDesc, CacheDesc } from "../../src/processor/Description"
-import { BaseModule, PipelineDesc, PipelineModule } from "../../src/processor/Module"
-import { ArgHandler, ArgTag, ArgType, DataTag, DataType } from "../../src/processor/Types"
+import { OperationDesc, DecoderDesc, CacheDesc, CacheControllerDesc } from "../../src/processor/Description"
+import { ArgHandler, ArgTag, DataTag } from "../../src/processor/Types"
 
 function randomOperationDesc(): OperationDesc {
 	return {
@@ -26,54 +26,7 @@ function randomDecoderDesc(opCount: number, opts?: { shiftBits: number, regSize:
 }
 
 describe('Operational Unit', () => {
-	it('Base Module', () => {
-		const intType: DataType = { tag: DataTag.Int, signed: false, width: 32 }
-
-		const test = new BaseModule('test', {
-			argTypes: [{ tag: ArgTag.Reg, type: intType }, { tag: ArgTag.Reg, type: intType }],
-			retTypes: [intType],
-			body: ([lhs, rhs], output) => [
-				output[0] ['='] (lhs ['+'] (rhs)),
-			],
-		})
-
-		const cg = new CodeGenerator(test)
-		const verilog = cg.generateVerilogCodeForModule(test, false)
-		console.log(verilog)
-	})
-
-	it('Pipelined Module', () => {
-		const intType: DataType = { tag: DataTag.Int, signed: false, width: 32 }
-
-		const desc: PipelineDesc = {
-			steps: [
-				{
-					argTypes: [{ tag: ArgTag.Reg, type: intType }, { tag: ArgTag.Reg, type: intType }],
-					retTypes: [intType],
-					body: ([lhs, rhs], output) => [
-						output[0] ['='] (lhs ['+'] (rhs)),
-					],
-				},
-				{
-					argTypes: [{ tag: ArgTag.Reg, type: intType }],
-					retTypes: [intType],
-					body: ([input], output) => [
-						output[0] ['='] (input ['+'] (input)),
-					],
-				},
-			]
-		}
-
-		const test = new PipelineModule('test', desc)
-
-		const cg = new CodeGenerator(test)
-		const verilog = cg.generateVerilogCodeForModule(test, false)
-		console.log(verilog)
-	})
-
 	it('Decoder tree', () => {
-		const intType: DataType = { tag: DataTag.Int, signed: false, width: 32 }
-
 		const ops: OperationDesc[] = [...Array(randomInt(1, 65))].map(() => randomOperationDesc())
 		const test = new DecoderTreeModule('test', ops, [{ argBits: 4, handler: ArgHandler.Immediate }])
 
@@ -102,6 +55,23 @@ describe('Operational Unit', () => {
 		}
 
 		const test = new CacheModule('test', desc)
+
+		const cg = new CodeGenerator(test)
+		const verilog = cg.generateVerilogCodeForModule(test, false)
+		console.log(verilog)
+	})
+
+	it.only('Cache controller', () => {
+		const cacheDesc: CacheControllerDesc = {
+			addressBits: 48,
+			widthBytes: 64,
+			rows: 1024,
+			readPorts: 2,
+			writePorts: [false],
+			ways: 4,
+		}
+
+		const test = new CacheControllerModule('test', cacheDesc)
 
 		const cg = new CodeGenerator(test)
 		const verilog = cg.generateVerilogCodeForModule(test, false)

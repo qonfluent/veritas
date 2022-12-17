@@ -2,43 +2,46 @@ import { BlockStatement, Case, Concat, Constant, Edge, GWModule, HIGH, If, Logic
 import { CacheDesc } from './Description'
 import { andAll, clearRegs, findFirstSet, indexArray, muxAll, orAll } from './Utils'
 
+export type CacheReadPort = {
+	// Inputs
+	read: SignalT
+	address: SignalT
+
+	// Outputs
+	complete: SignalT
+	hit: SignalT
+	data: SignalT
+}
+
+export type CacheWritePort = {
+	// Inputs
+	write: SignalT
+	dirty: SignalT
+	address: SignalT
+	data: SignalT
+
+	// Outputs
+	complete: SignalT
+	evict: SignalT
+	evictAddress: SignalT // NOTE: should be an in_out with the normal address lines
+	evictData: SignalT // NOTE: should be an in_out with the normal data lines
+}
+
 export class CacheModule extends GWModule {
-	public clk: SignalT = this.input(Signal())
-	public rst: SignalT = this.input(Signal())
+	public readonly clk: SignalT = this.input(Signal())
+	public readonly rst: SignalT = this.input(Signal())
 
-	public readPorts: {
-		// Inputs
-		read: SignalT
-		address: SignalT
+	public readonly readPorts: CacheReadPort[]
+	public readonly writePorts: CacheWritePort[]
 
-		// Outputs
-		complete: SignalT
-		hit: SignalT
-		data: SignalT
-	}[]
-
-	public writePorts: {
-		// Inputs
-		write: SignalT
-		dirty: SignalT
-		address: SignalT
-		data: SignalT
-
-		// Outputs
-		complete: SignalT
-		evict: SignalT
-		evictAddress: SignalT // NOTE: should be an in_out with the normal address lines
-		evictData: SignalT // NOTE: should be an in_out with the normal data lines
-	}[]
-
-	private _ways: {
+	private readonly _ways: {
 		valids: SignalT
 		dirtys: SignalT
 		tags: SignalArrayT
 		data: SignalArrayT
 	}[]
 
-	private _readPorts: {
+	private readonly _readPorts: {
 		inProgress: SignalT
 		compareTag: SignalT
 		ways: {
@@ -49,7 +52,7 @@ export class CacheModule extends GWModule {
 		}[]
 	}[]
 
-	private _writePorts: {
+	private readonly _writePorts: {
 		// Cycle 1 registers
 		inProgress: SignalT
 		dirty: SignalT
@@ -79,8 +82,8 @@ export class CacheModule extends GWModule {
 		}[]
 	}[]
 
-	private _selectorStartBit: number
-	private _selectorEndBit: number
+	private readonly _selectorStartBit: number
+	private readonly _selectorEndBit: number
 
 	public constructor(
 		name: string,

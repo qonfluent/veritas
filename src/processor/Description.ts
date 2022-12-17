@@ -41,59 +41,26 @@ export type DecoderDesc = {
 
 // A cache has a certain width per row, a number of rows, and a number of ways
 // Total size = widthBytes * rows * ways
-export type CacheDesc = {
+export type CacheDescHeader = {
 	addressBits: number
 	widthBytes: number
 	rows: number
-	readPorts: number
-	writePorts: number
 	ways: number
 }
 
-// Caches form a hierarchy
-export type CacheHierarchyDesc<T> = {
-	cache: CacheDesc
-	target: T
-} | {
-	cache: CacheDesc
-	children: CacheHierarchyDesc<T>[]
+export type CacheDesc = CacheDescHeader & {
+	readPorts: number
+	writePorts: number
 }
 
-export type RegisterFileDesc = {
-	registers: {
-		widthBits: number
-	}[]
+// Provides queueing and stalling for cache operations
+export type CacheControllerDesc = CacheDescHeader & {
+	readPorts: number
+	writePorts: boolean[]
 }
 
-// A core has a fixed set of decoders with a shared set of arg sizes(number of registers, etc)
-// The decoders have a set of groups/lanes which connect to various functional units
-// Each unit is described in the description
-// The cache hierarchy for the core is matched against the unit descriptions to ensure each unit has the required ports
 export type CoreDesc = {
-	argInfo: ArgInfoMap
 	decoders: DecoderDesc[]
-	registers: RegisterFileDesc
-	units: OperationDesc[]
-	cache: CacheHierarchyDesc<{
-		decoders: DecoderIndex[]
-		units: UnitIndex[]
-	}>
-}
-
-// Devices are memory mapped IO drivers, providing things like RAM access
-// They have access to an optional set of caches
-export type DeviceDesc = {
-	caches?: {
-		widthBytes: number
-	}[]
-}
-
-// A processor has a set of cores, devices, and a top level cache hierarchy
-export type ProcessorDesc = {
-	cores: CoreDesc[]
-	devices: DeviceDesc[]
-	cacheL3: CacheHierarchyDesc<{
-		cores: CoreIndex[]
-		devices: DeviceIndex[]
-	}>
+	units: OperationDescBody[]
+	argInfo: ArgInfoMap
 }
