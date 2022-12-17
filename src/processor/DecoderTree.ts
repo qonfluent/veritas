@@ -1,7 +1,7 @@
 import assert from 'assert'
 import { GWModule, SignalT, Signal, Ternary, Constant, SignalLike } from 'gateware-ts'
 import { OperationDesc, UnitIndex } from './Description'
-import { ArgSizeMap } from './Types'
+import { ArgInfoMap } from './Types'
 
 type DecoderTreeInner = {
 	opcode: UnitIndex
@@ -22,7 +22,7 @@ export class DecoderTreeModule extends GWModule {
 	public constructor(
 		name: string,
 		ops: OperationDesc[],
-		private readonly _argSizes: ArgSizeMap,
+		private readonly _argInfo: ArgInfoMap,
 		opcodeWidth = Math.ceil(Math.log2(ops.length)),
 	) {
 		assert(ops.length >= 1)
@@ -30,7 +30,7 @@ export class DecoderTreeModule extends GWModule {
 		super(name)
 
 		// Get opcode arg widths
-		this._opcodeArgWidths = ops.map((op) => op.argTypes.reduce((accum, argType) => accum + this._argSizes[argType.tag], 0))
+		this._opcodeArgWidths = ops.map((op) => op.argTypes.reduce((accum, argType) => accum + this._argInfo[argType.tag].argBits, 0))
 
 		// Handle one entry special case
 		if (ops.length === 1) {
@@ -96,7 +96,7 @@ export class DecoderTreeModule extends GWModule {
 			return Constant(this.opcode.width, inner.opcode)
 		}
 
-		return Ternary(this.decodeInput.bit(index), this.getOpcode(inner.zero, index + 1), this.getOpcode(inner.one, index + 1))
+		return Ternary(this.decodeInput.bit(index), this.getOpcode(inner.one, index + 1), this.getOpcode(inner.zero, index + 1))
 	}
 
 	private getOpcodeBits(inner?: DecoderTreeInner, index = 0): SignalLike {
@@ -107,6 +107,6 @@ export class DecoderTreeModule extends GWModule {
 			return Constant(width, 0)
 		}
 
-		return Constant(width, 1) ['+'] (Ternary(this.decodeInput.bit(index), this.getOpcodeBits(inner.zero, index + 1), this.getOpcodeBits(inner.one, index + 1)))
+		return Constant(width, 1) ['+'] (Ternary(this.decodeInput.bit(index), this.getOpcodeBits(inner.one, index + 1), this.getOpcodeBits(inner.zero, index + 1)))
 	}
 }

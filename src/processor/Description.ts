@@ -1,4 +1,4 @@
-import { ArgSizeMap, ArgType, DataType } from "./Types"
+import { ArgInfoMap, ArgType, DataType } from "./Types"
 
 // Index types to refer to parts of the processor
 export type UnitIndex = number
@@ -56,12 +56,17 @@ export type CacheHierarchyDesc<T> = {
 	children: CacheHierarchyDesc<T>[]
 }
 
+export type RegisterFileDesc = {
+	widthBytes: number
+	rows: number
+}
+
 // A core has a fixed set of decoders with a shared set of arg sizes(number of registers, etc)
 // The decoders have a set of groups/lanes which connect to various functional units
 // Each unit is described in the description
 // The cache hierarchy for the core is matched against the unit descriptions to ensure each unit has the required ports
 export type CoreDesc = {
-	argSizes: ArgSizeMap
+	argSizes: ArgInfoMap
 	decoders: DecoderDesc[]
 	units: OperationDesc[]
 	cache: CacheHierarchyDesc<{

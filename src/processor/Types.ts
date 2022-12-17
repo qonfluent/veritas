@@ -121,4 +121,14 @@ export type ArgType = {
 	type: DataType
 }
 
-export type ArgSizeMap = Record<ArgTag, number>
+export enum ArgHandler {
+	Immediate,
+	RegisterIndex,
+}
+
+export type ArgInfo = {
+	argBits: number
+	handler: ArgHandler
+}
+
+export type ArgInfoMap = Record<ArgTag, ArgInfo>

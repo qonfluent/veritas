@@ -2,7 +2,7 @@ import assert from 'assert'
 import { BlockStatement, CombinationalLogic, Edge, GWModule, HIGH, If, Signal, SignalLike, SignalT, Ternary } from 'gateware-ts'
 import { DecoderGroupModule, DecoderGroupOutput } from './DecoderGroup'
 import { DecoderDesc, OperationDesc } from './Description'
-import { ArgSizeMap } from './Types'
+import { ArgInfoMap } from './Types'
 import { reverseBits, clearRegs, maintainRegs } from './Utils'
 
 type DecoderStepInternal = {
@@ -37,13 +37,13 @@ export class DecoderModule extends GWModule {
 		name: string,
 		private readonly _desc: DecoderDesc,
 		units: OperationDesc[],
-		argSizes: ArgSizeMap,
+		argInfo: ArgInfoMap,
 	) {
 		super(name)
 
 		// Set up groups and IO
 		this._groups = _desc.groups.map((group, i) => {
-			const decoder = new DecoderGroupModule(`decoder_${i}`, group, units, argSizes)
+			const decoder = new DecoderGroupModule(`decoder_${i}`, group, units, argInfo)
 
 			return {
 				decoder,

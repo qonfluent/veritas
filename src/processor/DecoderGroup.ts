@@ -1,7 +1,7 @@
 import { SignalT, GWModule, Signal, Edge, If, HIGH } from "gateware-ts"
 import { DecoderTreeModule } from "./DecoderTree"
 import { DecoderGroupDesc, OperationDesc } from "./Description"
-import { ArgSizeMap } from "./Types"
+import { ArgInfoMap } from "./Types"
 import { clearRegs, maintainRegs } from "./Utils"
 
 export type DecoderGroupOutput = {
@@ -33,14 +33,14 @@ export class DecoderGroupModule extends GWModule {
 		name: string,
 		private readonly _desc: DecoderGroupDesc,
 		units: OperationDesc[],
-		argSizes: ArgSizeMap,
+		argInfo: ArgInfoMap,
 	) {
 		super(name)
 
 		// Set up internal decoders
 		const opcodeWidth = Math.ceil(Math.log2(units.length))
 		this._lanes = _desc.lanes.map(({ ops }, i) => {
-			const decoder = new DecoderTreeModule(`decoder_${i}`, ops.map((unit) => units[unit]), argSizes, opcodeWidth)
+			const decoder = new DecoderTreeModule(`decoder_${i}`, ops.map((unit) => units[unit]), argInfo, opcodeWidth)
 
 			return {
 				decoder,

@@ -1,10 +1,11 @@
 import { randomInt } from "crypto"
 import { CodeGenerator } from "gateware-ts"
+import { CacheModule } from "../../src/processor/Cache"
 import { DecoderModule } from "../../src/processor/Decoder"
 import { DecoderTreeModule } from "../../src/processor/DecoderTree"
-import { OperationDesc, DecoderDesc } from "../../src/processor/Description"
+import { OperationDesc, DecoderDesc, CacheDesc, CacheWayDesc } from "../../src/processor/Description"
 import { BaseModule, PipelineDesc, PipelineModule } from "../../src/processor/Module"
-import { ArgTag, ArgType, DataTag, DataType } from "../../src/processor/Types"
+import { ArgHandler, ArgTag, ArgType, DataTag, DataType } from "../../src/processor/Types"
 
 function randomOperationDesc(): OperationDesc {
 	return {
@@ -74,7 +75,7 @@ describe('Operational Unit', () => {
 		const intType: DataType = { tag: DataTag.Int, signed: false, width: 32 }
 
 		const ops: OperationDesc[] = [...Array(randomInt(1, 65))].map(() => randomOperationDesc())
-		const test = new DecoderTreeModule('test', ops, [4])
+		const test = new DecoderTreeModule('test', ops, [{ argBits: 4, handler: ArgHandler.Immediate }])
 
 		const cg = new CodeGenerator(test)
 		const verilog = cg.generateVerilogCodeForModule(test, false)
@@ -83,7 +84,24 @@ describe('Operational Unit', () => {
 
 	it('Decoder', () => {
 		const units = [...Array(randomInt(10, 4097))].map(() => randomOperationDesc())
-		const test = new DecoderModule('test', randomDecoderDesc(units.length), units, [randomInt(2, 17)])
+		const test = new DecoderModule('test', randomDecoderDesc(units.length), units, [{ argBits: randomInt(2, 17), handler: ArgHandler.Immediate }])
+
+		const cg = new CodeGenerator(test)
+		const verilog = cg.generateVerilogCodeForModule(test, false)
+		console.log(verilog)
+	})
+
+	it.only('Cache', () => {
+		const desc: CacheDesc = {
+			addressBits: 48,
+			widthBytes: 64,
+			rows: 1024,
+			readPorts: 2,
+			writePorts: 2,
+			ways: 4,
+		}
+
+		const test = new CacheModule('test', desc)
 
 		const cg = new CodeGenerator(test)
 		const verilog = cg.generateVerilogCodeForModule(test, false)
