@@ -9,6 +9,7 @@ import { ArgHandler, ArgTag, DataTag } from '../../src/processor/Types'
 
 function randomOperationDesc(): OperationDesc {
 	return {
+		opcode: 'op',
 		argTypes: [...Array(randomInt(5))].map(() => ({ tag: ArgTag.Reg, type: { tag: DataTag.Int, signed: false, width: 32 } })),
 		retTypes: [],
 	}

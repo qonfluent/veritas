@@ -12,6 +12,7 @@ export type DeviceIndex = number
 // Each unit is described with an operation desc
 // Arg type tag describes instruction encoding, type describes data encoding
 export type OperationDesc = {
+	opcode: string
 	argTypes: ArgType[]
 	retTypes: DataType[]
 	caches?: {

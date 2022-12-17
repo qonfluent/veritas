@@ -139,3 +139,5 @@ export type ArgInfo = {
 })
 
 export type ArgInfoMap = Record<ArgTag, ArgInfo>
+
+export type ArgData = number
