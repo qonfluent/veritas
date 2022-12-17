@@ -1,5 +1,5 @@
-import { Float16Array } from "@petamoriken/float16"
-import { Constant, ConstantT, Signal, SignalT, Signedness } from "gateware-ts"
+import { Float16Array } from '@petamoriken/float16'
+import { Constant, ConstantT, Signal, SignalT, Signedness } from 'gateware-ts'
 
 export type Address = number
 

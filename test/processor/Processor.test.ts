@@ -1,11 +1,11 @@
-import { randomInt } from "crypto"
-import { CodeGenerator } from "gateware-ts"
-import { CacheModule } from "../../src/processor/Cache"
-import { CacheControllerModule } from "../../src/processor/CacheController"
-import { DecoderModule } from "../../src/processor/Decoder"
-import { DecoderTreeModule } from "../../src/processor/DecoderTree"
-import { OperationDesc, DecoderDesc, CacheDesc, CacheControllerDesc } from "../../src/processor/Description"
-import { ArgHandler, ArgTag, DataTag } from "../../src/processor/Types"
+import { randomInt } from 'crypto'
+import { CodeGenerator } from 'gateware-ts'
+import { CacheModule } from '../../src/processor/Cache'
+import { CacheControllerModule } from '../../src/processor/CacheController'
+import { DecoderModule } from '../../src/processor/Decoder'
+import { DecoderTreeModule } from '../../src/processor/DecoderTree'
+import { OperationDesc, DecoderDesc, CacheDesc, CacheControllerDesc } from '../../src/processor/Description'
+import { ArgHandler, ArgTag, DataTag } from '../../src/processor/Types'
 
 function randomOperationDesc(): OperationDesc {
 	return {

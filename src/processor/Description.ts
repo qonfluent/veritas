@@ -1,5 +1,5 @@
-import { CombinationalLogic, SignalT } from "gateware-ts"
-import { ArgInfoMap, ArgType, DataType } from "./Types"
+import { CombinationalLogic, SignalT } from 'gateware-ts'
+import { ArgInfoMap, ArgType, DataType } from './Types'
 
 // Index types to refer to parts of the processor
 export type UnitIndex = number

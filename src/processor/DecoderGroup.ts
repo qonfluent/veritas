@@ -1,8 +1,8 @@
-import { SignalT, GWModule, Signal, Edge, If, HIGH } from "gateware-ts"
-import { DecoderTreeModule } from "./DecoderTree"
-import { DecoderGroupDesc, OperationDesc } from "./Description"
-import { ArgInfoMap } from "./Types"
-import { clearRegs, maintainRegs } from "./Utils"
+import { SignalT, GWModule, Signal, Edge, If, HIGH } from 'gateware-ts'
+import { DecoderTreeModule } from './DecoderTree'
+import { DecoderGroupDesc, OperationDesc } from './Description'
+import { ArgInfoMap } from './Types'
+import { clearRegs, maintainRegs } from './Utils'
 
 export type DecoderGroupOutput = {
 	valid: SignalT

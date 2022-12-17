@@ -1,5 +1,5 @@
-import assert from "assert"
-import { SignalT, BlockStatement, Constant, SignalLike, Concat, Ternary } from "gateware-ts"
+import assert from 'assert'
+import { SignalT, BlockStatement, Constant, SignalLike, Concat, Ternary } from 'gateware-ts'
 
 export function clearRegs(regs: SignalLike[]): BlockStatement[] {
 	return regs.map((reg) => reg ['='] (Constant(reg.width, 0)))
