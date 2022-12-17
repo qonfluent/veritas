@@ -3,7 +3,7 @@ import { CodeGenerator } from "gateware-ts"
 import { CacheModule } from "../../src/processor/Cache"
 import { DecoderModule } from "../../src/processor/Decoder"
 import { DecoderTreeModule } from "../../src/processor/DecoderTree"
-import { OperationDesc, DecoderDesc, CacheDesc, CacheWayDesc } from "../../src/processor/Description"
+import { OperationDesc, DecoderDesc, CacheDesc } from "../../src/processor/Description"
 import { BaseModule, PipelineDesc, PipelineModule } from "../../src/processor/Module"
 import { ArgHandler, ArgTag, ArgType, DataTag, DataType } from "../../src/processor/Types"
 

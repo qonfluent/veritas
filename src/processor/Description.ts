@@ -34,16 +34,12 @@ export type DecoderDesc = {
 
 // A cache has a certain width per row, a number of rows, and a number of ways
 // Total size = widthBytes * rows * ways
-// Access time = O(log2(rows))
-export type CacheWayDesc = {
+export type CacheDesc = {
 	addressBits: number
 	widthBytes: number
 	rows: number
 	readPorts: number
 	writePorts: number
-}
-
-export type CacheDesc = CacheWayDesc & {
 	ways: number
 }
 
