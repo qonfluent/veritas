@@ -102,6 +102,7 @@ export class DecoderModule extends GWModule {
 			})
 		})
 
+		// Combinational logic
 		this.combinationalLogic([
 			...this.connectLaneCounts(),
 			...this.connectGroupInputs(),

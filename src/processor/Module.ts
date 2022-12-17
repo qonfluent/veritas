@@ -1,12 +1,6 @@
-import { SignalT, CombinationalLogic, GWModule, Signal, Edge, If, HIGH, Constant } from "gateware-ts"
-import { OperationDesc } from "./Description"
+import { SignalT, GWModule, Signal, Edge, If, HIGH, Constant } from "gateware-ts"
+import { OperationBody, OperationDesc, OperationDescBody } from "./Description"
 import { typeToSignal } from "./Types"
-
-export type OperationBody = (inputs: SignalT[], outputs: SignalT[]) => CombinationalLogic[]
-
-export type OperationDescBody = OperationDesc & {
-	body: OperationBody
-}
 
 export abstract class IModule extends GWModule {
 	public clk = this.input(Signal())

@@ -1,3 +1,4 @@
+import { CombinationalLogic, SignalT } from "gateware-ts"
 import { ArgInfoMap, ArgType, DataType } from "./Types"
 
 // Index types to refer to parts of the processor
@@ -16,6 +17,12 @@ export type OperationDesc = {
 	caches?: {
 		widthBytes: number
 	}[]
+}
+
+export type OperationBody = (inputs: SignalT[], outputs: SignalT[]) => CombinationalLogic[]
+
+export type OperationDescBody = OperationDesc & {
+	body: OperationBody
 }
 
 // Units are combined into groups, where each group has a number of lanes

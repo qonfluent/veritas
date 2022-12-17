@@ -91,7 +91,7 @@ describe('Operational Unit', () => {
 		console.log(verilog)
 	})
 
-	it.only('Cache', () => {
+	it('Cache', () => {
 		const desc: CacheDesc = {
 			addressBits: 48,
 			widthBytes: 64,

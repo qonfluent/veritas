@@ -112,6 +112,8 @@ export function encode(value: DataValue): ConstantT {
 	}
 }
 
+export type RegisterIndex = number
+
 export enum ArgTag {
 	Reg,
 }
@@ -128,7 +130,11 @@ export enum ArgHandler {
 
 export type ArgInfo = {
 	argBits: number
-	handler: ArgHandler
+	handler: ArgHandler.Immediate
+} | {
+	argBits: number
+	handler: ArgHandler.RegisterIndex
+	indexing: RegisterIndex[]
 }
 
 export type ArgInfoMap = Record<ArgTag, ArgInfo>

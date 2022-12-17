@@ -7,20 +7,24 @@ export class CacheModule extends GWModule {
 	public rst: SignalT = this.input(Signal())
 
 	public readPorts: {
+		// Inputs
 		read: SignalT
 		address: SignalT
 
+		// Outputs
 		complete: SignalT
 		hit: SignalT
 		data: SignalT
 	}[]
 
 	public writePorts: {
+		// Inputs
 		write: SignalT
 		dirty: SignalT
 		address: SignalT
 		data: SignalT
 
+		// Outputs
 		complete: SignalT
 		evict: SignalT
 		evictAddress: SignalT // NOTE: should be an in_out with the normal address lines
@@ -46,15 +50,17 @@ export class CacheModule extends GWModule {
 	}[]
 
 	private _writePorts: {
+		// Cycle 1 registers
 		inProgress: SignalT
 		dirty: SignalT
 		compareTag: SignalT
 		selector: SignalT
 		writeData: SignalT
+		preSelectedWay: SignalT
 		
+		// Cycle 2 wires
 		anyMatch: SignalT
 		allValid: SignalT
-		preSelectedWay: SignalT
 		selectedWay: SignalT
 
 		evict: SignalT
@@ -62,10 +68,13 @@ export class CacheModule extends GWModule {
 		evictData: SignalT
 
 		ways: {
+			// Per-way registers
 			loadedValid: SignalT
 			loadedDirty: SignalT
 			loadedTag: SignalT
 			loadedData: SignalT
+
+			// Per-way wires
 			match: SignalT
 		}[]
 	}[]
