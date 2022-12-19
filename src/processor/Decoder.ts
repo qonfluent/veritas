@@ -2,7 +2,7 @@ import { Constant, SignalLike } from "gateware-ts"
 import { DecoderTreeModule } from "./DecoderTree"
 import { DecoderDesc, OperationDesc } from "./Description"
 import { BasicModule } from "./Module"
-import { indexArray, reverseBits, signedShiftLeft } from "./Utils"
+import { indexArray, rangeFlatMap, rangeMap, reverseBits, signedShiftLeft } from "./Utils"
 
 export class DecoderModule extends BasicModule {
 	public constructor(
@@ -11,6 +11,8 @@ export class DecoderModule extends BasicModule {
 		units: OperationDesc[],
 	) {
 		const decoders = desc.groups.map((lanes, i) => lanes.map((desc, j) => new DecoderTreeModule(`decoder_${i}_${j}`, desc, units)))
+		const decoderWidths = decoders.map((lanes) => lanes.map((module) => module.inputPorts.instruction.width))
+		const laneWidths = decoderWidths.map((lanes) => lanes.reduce((sum, width) => sum + width, 0))
 
 		const headerBits = desc.shiftBits + desc.groups.reduce((sum, lanes) => sum + Math.ceil(Math.log2(lanes.length)), 0)
 		const maxInstructionBits = headerBits + decoders.reduce((sum, lanes) => sum + lanes.reduce((sum, module) => sum + module.inputPorts.instruction.width, 0), 0)
@@ -33,19 +35,18 @@ export class DecoderModule extends BasicModule {
 			internals: {
 				shift_bytes_temp: desc.shiftBits,
 				...Object.fromEntries(decoders.map((lanes, i) => [`lane_count_${i}`, Math.ceil(Math.log2(lanes.length))])),
-				...Object.fromEntries([...Array(stepCount)].flatMap((_, step) => {
-					const stepWidth = decoders.reduce((sum, group, groupIndex) => {
-						const totalWidth = group.reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
-						return sum + (groupIndex >= 2 * step + 1 ? totalWidth : 0)
+				...Object.fromEntries(rangeFlatMap(stepCount, (step) => {
+					const stepWidth = laneWidths.reduce((sum, laneWidth, groupIndex) => {
+						return sum + (groupIndex >= 2 * step + 1 ? laneWidth : 0)
 					}, 0)
 
-					const flipWidth = decoders[2 * step + 1].reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
+					const flipWidth = laneWidths[2 * step + 1]
 
 					return [
 						[`step_${step}_instruction`, stepWidth],
 						[`step_${step}_slice`, flipWidth],
 						[`step_${step}_flip`, flipWidth],
-						...[...Array(desc.groups.length - (2 * step + 1))].map((_, i) => [`step_${step}_lane_count_${i}`]),
+						...rangeMap(desc.groups.length - (2 * step + 1), (i) => [`step_${step}_lane_count_${i}`]),
 					]
 				}))
 			},
@@ -65,7 +66,7 @@ export class DecoderModule extends BasicModule {
 						...laneCounts,
 
 						// Connect up slice and flip in instructions
-						...[...Array(stepCount)].flatMap((_, step) => {
+						...rangeFlatMap(stepCount, (step) => {
 							const sliceSize = decoders[2 * step + 1].reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
 
 							return [
@@ -107,11 +108,9 @@ export class DecoderModule extends BasicModule {
 						}),
 
 						// Connect up step pipeline
-						...[...Array(stepCount)].flatMap((_, step) => {
+						...rangeFlatMap(stepCount, (step) => {
 							const instruction = step === 0 ? state.instruction : state[`state_${step - 1}_instruction`]
-							const laneCounts = step === 0
-								? [...Array(desc.groups.length)].map((_, i) => state[`lane_count_${i}`])
-								: [...Array(desc.groups.length)].map((_, i) => state[`state_${step - 1}_lane_count_${i}`])
+							const laneCounts = rangeMap(desc.groups.length, (i) => step === 0 ? state[`lane_count_${i}`] : state[`state_${step - 1}_lane_count_${i}`])
 							const baseShift = step === 0 ? headerBits : decoders[2 * step - 1].reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
 
 							return [

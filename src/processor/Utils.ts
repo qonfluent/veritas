@@ -1,6 +1,26 @@
 import assert from "assert";
 import { BlockStatement, Concat, Constant, SignalLike, SignalT, Ternary } from "gateware-ts";
 
+export function rangeMap<T>(n: number, body: (i: number) => T): T[] {
+	return [...Array(n)].map((_, i) => body(i))
+}
+
+export function rangeFlatMap<T>(n: number, body: (i: number) => T[]): T[] {
+	return [...Array(n)].flatMap((_, i) => body(i))
+}
+
+export function recordRangeMap<T>(n: number, body: (i: number) => [string, T]): Record<string, T> {
+	return Object.fromEntries([...Array(n)].map((_, i) => body(i)))
+}
+
+export function recordRangeFlatMap<T>(n: number, body: (i: number) => [string, T][]): Record<string, T> {
+	return Object.fromEntries([...Array(n)].flatMap((_, i) => body(i)))
+}
+
+export function recordRangeFlatMap2<T>(n: number, m: number, body: (i: number, j: number) => [string, T][]): Record<string, T> {
+	return Object.fromEntries([...Array(n)].flatMap((_, i) => [...Array(m)].flatMap((_, j) => body(i, j))))
+}
+
 export function signedShiftLeft(signal: SignalLike, shift: number): SignalLike {
 	if (shift > 0) {
 		return signal ['<<'] (shift)
