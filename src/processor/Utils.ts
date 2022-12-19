@@ -1,5 +1,5 @@
 import assert from "assert";
-import { BlockStatement, Concat, Constant, SignalLike, SignalT, Ternary } from "gateware-ts";
+import { BlockStatement, Concat, Constant, Not, SignalLike, SignalT, Ternary } from "gateware-ts";
 
 export function rangeMap<T>(n: number, body: (i: number) => T): T[] {
 	return [...Array(n)].map((_, i) => body(i))
@@ -77,4 +77,8 @@ export function firstSetIndex(values: SignalLike[], width = Math.ceil(Math.log2(
 	}
 
 	return Ternary(values[0], Constant(width, index), firstSetIndex(values.slice(1), width, index + 1))
+}
+
+export function setBit(reg: SignalT, index: SignalLike, value: SignalLike): SignalLike {
+	return (reg ['&'] (Not(Constant(1, 1) ['<<'] (index)))) ['|'] (value ['<<'] (index))
 }

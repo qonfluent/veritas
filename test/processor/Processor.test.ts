@@ -1,6 +1,7 @@
 import { randomInt } from "crypto"
 import { CodeGenerator } from "gateware-ts"
 import { CacheModule } from "../../src/processor/Cache"
+import { CacheControllerModule } from "../../src/processor/CacheController"
 import { DecoderModule } from "../../src/processor/Decoder"
 import { ArgType, DecoderDesc, OperationDesc } from "../../src/processor/Description"
 
@@ -37,12 +38,13 @@ describe('Processor', () => {
 		console.log(cg.toVerilog())
 	})
 
-	it.only('Creates cache', () => {
+	it('Creates L1 cache', () => {
+		// 192KB L1 cache
 		const test = new CacheModule('test', {
 			addressBits: 48,
 			widthBytes: 64,
-			rows: 1024,
-			ways: 2,
+			rows: 128,
+			ways: 24,
 			readPorts: 2,
 			writePorts: 2,
 		})

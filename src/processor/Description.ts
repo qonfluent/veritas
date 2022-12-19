@@ -40,11 +40,33 @@ export type DecoderDesc = {
 	groups: DecoderTreeDesc[][]
 }
 
-export type CacheDesc = {
+export type CacheDescHeader = {
 	addressBits: number
-	widthBytes: number
-	rows: number
+	widthBytes: number // Power of two
+	rows: number // Power of two
 	ways: number
+}
+
+export type CacheDesc = CacheDescHeader & {
 	readPorts: number
 	writePorts: number
+}
+
+export type CachePortDesc = {
+	read?: {
+		streamBytes: number
+	} | {
+		maxDelay: number
+		readWidthBytes: number[]
+		retireStations: number
+	},
+	write?: {
+		useTristate: boolean
+	},
+}
+
+export type CacheControllerDesc = CacheDescHeader & {
+	hasValidBits: boolean
+	banking: number[]
+	ports: CachePortDesc[]
 }
