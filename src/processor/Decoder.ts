@@ -1,235 +1,143 @@
-import assert from 'assert'
-import { BlockStatement, CombinationalLogic, Edge, GWModule, HIGH, If, Signal, SignalLike, SignalT, Ternary } from 'gateware-ts'
-import { DecoderGroupModule, DecoderGroupOutput } from './DecoderGroup'
-import { DecoderDesc, OperationDesc } from './Description'
-import { ArgInfoMap } from './Types'
-import { reverseBits, clearRegs, maintainRegs } from './Utils'
+import { Constant, SignalLike } from "gateware-ts"
+import { DecoderTreeModule } from "./DecoderTree"
+import { DecoderDesc, OperationDesc } from "./Description"
+import { BasicModule } from "./Module"
+import { indexArray, reverseBits, signedShiftLeft } from "./Utils"
 
-type DecoderStepInternal = {
-	laneCounts: SignalT[]
-	instruction: SignalT
-}
-
-export class DecoderModule extends GWModule {
-	public clk: SignalT = this.input(Signal())
-	public rst: SignalT = this.input(Signal())
-
-	public instruction: SignalT
-
-	public shiftBytes: SignalT
-	public groups: DecoderGroupOutput[]
-
-	private _groups: {
-		decoder: DecoderGroupModule
-		laneCount: SignalT
-		instruction: SignalT
-	}[]
-
-	private _steps: DecoderStepInternal[] = []
-
-	private _laneCounts: SignalT[]
-
-	private _headerSize: number
-
+export class DecoderModule extends BasicModule {
 	public constructor(
 		name: string,
-		private readonly _desc: DecoderDesc,
+		desc: DecoderDesc,
 		units: OperationDesc[],
-		argInfo: ArgInfoMap,
 	) {
-		super(name)
+		const decoders = desc.groups.map((lanes, i) => lanes.map((desc, j) => new DecoderTreeModule(`decoder_${i}_${j}`, desc, units)))
 
-		// Set up groups and IO
-		this._groups = _desc.groups.map((group, i) => {
-			const decoder = new DecoderGroupModule(`decoder_${i}`, group, units, argInfo)
+		const headerBits = desc.shiftBits + desc.groups.reduce((sum, lanes) => sum + Math.ceil(Math.log2(lanes.length)), 0)
+		const maxInstructionBits = headerBits + decoders.reduce((sum, lanes) => sum + lanes.reduce((sum, module) => sum + module.inputPorts.instruction.width, 0), 0)
+		const maxInstructionBytes = Math.ceil(maxInstructionBits / 8)
 
-			return {
-				decoder,
-				laneCount: this.createInternal(`lane_count_buf_${i}`, Signal(decoder.laneCount.width)),
-				instruction: this.createInternal(`instruction_buf_${i}`, Signal(decoder.instruction.width)),
-			}
-		})
+		const stepCount = desc.groups.length >> 1
 
-		// Calculate max instruction bytes
-		this._headerSize = _desc.shiftBits + this._desc.groups.reduce((sum, { lanes }) => sum + Math.ceil(Math.log2(lanes.length)), 0)
-		const bodySize = this._groups.reduce((sum, { decoder }) => sum + decoder.instruction.width, 0)
-		const maxInstructionSize = this._headerSize + bodySize
-		const maxInstructionBytes = Math.ceil(maxInstructionSize / 8)
+		super(name, {
+			inputs: {
+				instruction: 8 * maxInstructionBytes,
+			},
+			outputs: {
+				shift_bytes: desc.shiftBits,
+				...Object.fromEntries(decoders.flatMap((lanes, i) => lanes.flatMap((decoder, j) => [
+					[`valid_${i}_${j}`, 1],
+					[`opcode_${i}_${j}`, decoder.outputPorts.opcode.width],
+					[`args_${i}_${j}`, decoder.outputPorts.args.width],
+				])))
+			},
+			internals: {
+				shift_bytes_temp: desc.shiftBits,
+				...Object.fromEntries(decoders.map((lanes, i) => [`lane_count_${i}`, Math.ceil(Math.log2(lanes.length))])),
+				...Object.fromEntries([...Array(stepCount)].flatMap((_, step) => {
+					const stepWidth = decoders.reduce((sum, group, groupIndex) => {
+						const totalWidth = group.reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
+						return sum + (groupIndex >= 2 * step + 1 ? totalWidth : 0)
+					}, 0)
 
-		// Set up IO
-		this.instruction = this.input(Signal(maxInstructionBytes * 8))
-		this.shiftBytes = this.output(Signal(Math.ceil(Math.log2(maxInstructionBytes))))
-		this.groups = this._groups.map(({ decoder }, i) => {
-			return decoder.lanes.map(({ opcode, args }, j) => {
+					const flipWidth = decoders[2 * step + 1].reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
+
+					return [
+						[`step_${step}_instruction`, stepWidth],
+						[`step_${step}_slice`, flipWidth],
+						[`step_${step}_flip`, flipWidth],
+						...[...Array(desc.groups.length - (2 * step + 1))].map((_, i) => [`step_${step}_lane_count_${i}`]),
+					]
+				}))
+			},
+			arrays: {},
+			modules: Object.fromEntries(decoders.flatMap((lanes, i) => lanes.map((module, j) => [`decoder_${i}_${j}`, module]))),
+			logic: (state) => {
+				let index = desc.shiftBits
+				const laneCounts = decoders.map((_, i) => {
+					const bits = state[`lane_count_${i}`].width
+					const result = state[`lane_count_${i}`] ['='] (state.instruction.slice(index, index + bits - 1))
+					index += bits
+					return result
+				})
+				
 				return {
-					valid: this.createOutput(`valid_${i}_${j}`, Signal()),
-					opcode: this.createOutput(`opcode_${i}_${j}`, Signal(opcode.width)),
-					args: this.createOutput(`args_${i}_${j}`, Signal(args.width)),
+					logic: [
+						...laneCounts,
+
+						// Connect up slice and flip in instructions
+						...[...Array(stepCount)].flatMap((_, step) => {
+							const sliceSize = decoders[2 * step + 1].reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
+
+							return [
+								state[`step_${step}_slice`] ['='] (state[`step_${step}_instruction`].slice(0, sliceSize - 1)),
+								state[`step_${step}_flip`] ['='] (reverseBits(state[`step_${step}_slice`])),
+							]
+						}),
+
+						// Connect up input instructions
+						...decoders.flatMap((lanes, i) => {
+							const step = (i - 1) >> 1
+							const group = i === 0 ? state.instruction : (i & 1) === 1 ? state[`step_${step}_flip`] : state[`step_${step}_instruction`]
+							let offset = i === 0 ? headerBits : (i & 1) === 1 ? 0 : decoders[i - 1].reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
+							return lanes.map((_, j) => {
+								const bits = state[`decoder_${i}_${j}_instruction`].width
+								const result = state[`decoder_${i}_${j}_instruction`] ['='] (group.slice(offset, offset + bits - 1))
+								offset += bits
+								return result
+							})
+						})
+					],
+					state: [
+						// Connect up shift_bytes
+						state.shift_bytes ['='] (state.instruction.slice(0, desc.shiftBits - 1)),
+
+						// Connect up outputs
+						...decoders.flatMap((lanes, i) => {
+							const step = (i - 1) >> 1
+							const stepOffset = i & 1 ? 0 : i === decoders.length - 1 ? 0 : 1
+							const laneCount = i === 0 ? state.lane_count_0 : state[`step_${step}_lane_count_${stepOffset}`]
+
+							return lanes.flatMap((_, j) => {
+								return [
+									state[`valid_${i}_${j}`] ['='] (laneCount ['>='] (Constant(state[`lane_count_${i}`].width, j))),
+									state[`opcode_${i}_${j}`] ['='] (state[`decoder_${i}_${j}_opcode`]),
+									state[`args_${i}_${j}`] ['='] (state[`decoder_${i}_${j}_args`]),
+								]
+							})
+						}),
+
+						// Connect up step pipeline
+						...[...Array(stepCount)].flatMap((_, step) => {
+							const instruction = step === 0 ? state.instruction : state[`state_${step - 1}_instruction`]
+							const laneCounts = step === 0
+								? [...Array(desc.groups.length)].map((_, i) => state[`lane_count_${i}`])
+								: [...Array(desc.groups.length)].map((_, i) => state[`state_${step - 1}_lane_count_${i}`])
+							const baseShift = step === 0 ? headerBits : decoders[2 * step - 1].reduce((sum, module) => sum + module.inputPorts.instruction.width, 0)
+
+							return [
+								state[`step_${step}_instruction`] ['='] (this.forwardInstruction(instruction, laneCounts, step, baseShift, decoders)),
+								...laneCounts.slice(step === 0 ? 1 : 2).map((laneCount, i) => state[`step_${step}_lane_count_${i}`] ['='] (laneCount)),
+							]
+						}),
+					]
 				}
-			})
-		})
-
-		// Set up steps
-		for (let i = 1, step = 0; i < this._groups.length; i += 2, step++) {
-			this._steps.push({
-				laneCounts: [...Array(this._groups.length - i)].map((_, j) => this.createInternal(`step_lane_count_${step}_${j}`, Signal(this._groups[i + j].laneCount.width))),
-				instruction: this.createInternal(`step_ins_${step}`, Signal(this._groups[i].instruction.width + (this._groups[i + 1]?.instruction.width ?? 0))),
-			})
-		}
-
-		this._laneCounts = this._groups.map(({ laneCount }, i) => this.createInternal(`lane_count_${i}`, Signal(laneCount.width)))
-	}
-
-	public describe(): void {
-		// Submodules
-		this._groups.forEach(({ decoder, laneCount, instruction }, i) => {
-			this.addSubmodule(decoder, `decoder_${i}`, {
-				inputs: {
-					clk: this.clk,
-					rst: this.rst,
-
-					laneCount,
-					instruction,
-				},
-				outputs: Object.fromEntries(decoder.lanes.flatMap((_, j) => [
-					[`valid_${j}`, [this.groups[i][j].valid]],
-					[`opcode_${j}`, [this.groups[i][j].opcode]],
-					[`args_${j}`, [this.groups[i][j].args]],
-				])),
-			})
-		})
-
-		// Combinational logic
-		this.combinationalLogic([
-			...this.connectLaneCounts(),
-			...this.connectGroupInputs(),
-		])
-
-		// Sync block
-		const allRegs = [this.shiftBytes]
-		this.syncBlock(this.clk, Edge.Negative, [
-			If(this.rst ['=='] (HIGH), [
-				...clearRegs(allRegs)
-			]).Else([
-				this.shiftBytes ['='] (this.instruction.slice(0, this._desc.shiftBits - 1)),
-				...this.updateSteps()
-			])
-		])
-	}
-
-	private connectLaneCounts(): CombinationalLogic[] {
-		let index = this._desc.shiftBits
-		
-		return this._laneCounts.map((laneCount) => {
-			const result = laneCount ['='] (this.instruction.slice(index, index + laneCount.width - 1))
-			index += laneCount.width
-			return result
+			}
 		})
 	}
 
-	private connectGroupInputs(): CombinationalLogic[] {
-		const logic: CombinationalLogic[] = []
-
-		// Connect up group zero
-		logic.push(
-			this._groups[0].laneCount ['='] (this._laneCounts[0]),
-			this._groups[0].instruction ['='] (this.instruction.slice(this._headerSize, this._headerSize + this._groups[0].instruction.width - 1)),
-		)
-
-		// Connect up remaining groups
-		for (let i = 1, step = 0; i < this._groups.length; i += 2, step++) {
-			const lowHalfSize = this._groups[i].instruction.width
-			logic.push(
-				this._groups[i].laneCount ['='] (this._steps[step].laneCounts[0]),
-				this._groups[i].instruction ['='] (reverseBits(this._steps[step].instruction.slice(0, lowHalfSize - 1))),
-			)
-
-			if (i + 1 < this._groups.length) {
-				logic.push(
-					this._groups[i + 1].laneCount ['='] (this._steps[step].laneCounts[1]),
-					this._groups[i + 1].instruction ['='] (this._steps[step].instruction.slice(lowHalfSize, this._steps[step].instruction.width - 1)),
-				)
-			}
-		}
-
-		return logic
-	}
-
-	private updateSteps(): BlockStatement[] {
-		const block: BlockStatement[] = []
-
-		// Handle lane counts
-		for (let i = 1, step = 0; i < this._groups.length; i += 2, step++) {
-			if (step === 0) {
-				// Move lane counts forward in pipeline
-				block.push(...this.forwardLaneCounts(this._laneCounts, this._steps[0], 1))
-			} else {
-				// Move lane counts forward in pipeline
-				block.push(...this.forwardLaneCounts(this._steps[step - 1].laneCounts, this._steps[step], 2))
-			}
-		}
-
-		// Handle instructions
-		const headerSize = this._desc.shiftBits + this._desc.groups.reduce((sum, { lanes }) => sum + lanes.length, 0)
-		for (let i = 1, step = 0; i < this._groups.length; i += 2, step++) {
-			if (step === 0) {
-				block.push(this.forwardInstruction(headerSize, this._laneCounts, i, this._steps[0].instruction, this.instruction))
-			} else {
-				block.push(this.forwardInstruction(this._groups[i - 2].instruction.width, this._steps[step - 1].laneCounts, i, this._steps[step].instruction, this._steps[step - 1].instruction))
-			}
-		}
-
-		return block
-	}
-
-	private forwardLaneCounts(source: SignalT[], step: DecoderStepInternal, sliceSize: number): BlockStatement[] {
-		const block: BlockStatement[] = []
-
-		for (let i = 0; i < step.laneCounts.length - sliceSize; i++) {
-			block.push(step.laneCounts[i] ['='] (source[i + sliceSize]))
-		}
-
-		return block
-	}
-
-	// i is an odd number [1, 3, 5, ...]
-	private forwardInstruction(baseShift: number, laneCounts: SignalT[], i: number, targetIns: SignalT, sourceIns: SignalT): BlockStatement {
+	private forwardInstruction(instruction: SignalLike, laneCounts: SignalLike[], step: number, baseShift: number, decoders: DecoderTreeModule[][]): SignalLike {
 		let shiftDown = baseShift
-		const shiftTable = this._groups[i - 1].decoder.laneWidths.map((laneWidth) => {
-			shiftDown += laneWidth
+		const shiftTable = decoders[step * 2].map((module) => {
+			shiftDown += module.inputPorts.instruction.width
 
-			const currentLaneWidths = this._groups[i].decoder.laneWidths
-			
-			return currentLaneWidths.map((_, k) => {
-				const shiftUp = currentLaneWidths.filter((_, l) => l >= k).reduce((sum, val) => sum + val, 0)
-				const finalShift = shiftDown - shiftUp
-				return this.shiftRightSignedDir(sourceIns, finalShift)
+			const row = decoders[step * 2 + 1]
+			return row.map((_, i) => {
+				const shiftUp = row.reduce((sum, val, j) => sum + (j >= i ? val.inputPorts.instruction.width : 0), 0)
+				const finalShift = shiftUp - shiftDown
+				return signedShiftLeft(instruction, finalShift)
 			})
 		})
-		
-		return targetIns ['='] (this.indexTable2D(shiftTable, laneCounts))
-	}
 
-	private indexTable2D(table: SignalLike[][], indexes: SignalLike[]): SignalLike {
-		assert(indexes.length >= 2)
-		return this.indexTable1D(table.map((row) => this.indexTable1D(row, indexes[1])), indexes[0])
-	}
-
-	private indexTable1D(table: SignalLike[], index: SignalLike, i = 0): SignalLike {
-		if (table.length === 1) {
-			return table[0]
-		}
-		
-		return Ternary(index ['=='] (i), table[0], this.indexTable1D(table.slice(1), index, i + 1))
-	}
-
-	private shiftRightSignedDir(source: SignalLike, shift: number): SignalLike {
-		if (shift > 0) {
-			return source ['>>'] (shift)
-		} else if (shift < 0) {
-			return source ['<<'] (-shift)
-		} else {
-			return source
-		}
+		return indexArray(shiftTable.map((signals) => indexArray(signals, laneCounts[1])), laneCounts[0])
 	}
 }

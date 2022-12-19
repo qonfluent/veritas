@@ -1,67 +1,50 @@
-import { CombinationalLogic, SignalT } from 'gateware-ts'
-import { ArgInfoMap, ArgType, DataType } from './Types'
+import { SignalT, SignalArrayT, CombinationalLogic, BlockStatement } from "gateware-ts"
+import { BasicModule } from "./Module"
 
-// Index types to refer to parts of the processor
-export type UnitIndex = number
-export type LaneIndex = number
-export type GroupIndex = number
-export type DecoderIndex = number
-export type CoreIndex = number
-export type DeviceIndex = number
+export type ModuleDesc = {
+	inputs?: Record<string, number>
+	outputs?: Record<string, number>
+	internals?: Record<string, number>
+	arrays?: Record<string, [number, number]>
+	modules?: Record<string, ModuleDesc | BasicModule>
+	registerOutputs?: boolean
+	registers?: string[]
+	logic: (state: Record<string, SignalT>, arrays: Record<string, SignalArrayT>) => {
+		logic: CombinationalLogic[]
+		state?: BlockStatement[]
+	}
+}
 
-// Each unit is described with an operation desc
-// Arg type tag describes instruction encoding, type describes data encoding
+export enum ArgType {
+	Immediate,
+	Register,
+}
+
+export type ArgInfo = {
+	type: ArgType
+	width: number
+}
+
 export type OperationDesc = {
-	opcode: string
-	argTypes: ArgType[]
-	retTypes: DataType[]
-	caches?: {
-		widthBytes: number
-	}[]
+	inputs: Record<string, ArgInfo>
 }
 
-export type OperationBody = (inputs: SignalT[], outputs: SignalT[]) => CombinationalLogic[]
+export type UnitIndex = number
 
-export type OperationDescBody = OperationDesc & {
-	body: OperationBody
+export type DecoderTreeDesc = {
+	ops: UnitIndex[]
 }
 
-// Units are combined into groups, where each group has a number of lanes
-// Each lane connects to a number of functional units
-export type DecoderGroupDesc = {
-	lanes: {
-		ops: UnitIndex[]
-	}[]
-}
-
-// A number of groups along with some book keeping information form a decoder
 export type DecoderDesc = {
 	shiftBits: number
-	groups: DecoderGroupDesc[]
+	groups: DecoderTreeDesc[][]
 }
 
-// A cache has a certain width per row, a number of rows, and a number of ways
-// Total size = widthBytes * rows * ways
-export type CacheDescHeader = {
+export type CacheDesc = {
 	addressBits: number
 	widthBytes: number
 	rows: number
 	ways: number
-}
-
-export type CacheDesc = CacheDescHeader & {
 	readPorts: number
 	writePorts: number
-}
-
-// Provides queueing and stalling for cache operations
-export type CacheControllerDesc = CacheDescHeader & {
-	readPorts: number
-	writePorts: boolean[]
-}
-
-export type CoreDesc = {
-	decoders: DecoderDesc[]
-	units: OperationDescBody[]
-	argInfo: ArgInfoMap
 }

@@ -1,339 +1,203 @@
-import { BlockStatement, Case, Concat, Constant, Edge, GWModule, HIGH, If, LogicalNot, Signal, SignalArray, SignalArrayT, SignalT, Switch, Ternary } from 'gateware-ts'
+import assert from 'assert'
+import { Constant, If, LogicalNot, Not, Ternary } from 'gateware-ts'
 import { CacheDesc } from './Description'
-import { andAll, clearRegs, findFirstSet, indexArray, muxAll, orAll } from './Utils'
+import { BasicModule } from './Module'
+import { firstSetIndex, logicalOpAll, prioritySelector } from './Utils'
 
-export type CacheReadPort = {
-	// Inputs
-	read: SignalT
-	address: SignalT
-
-	// Outputs
-	complete: SignalT
-	hit: SignalT
-	data: SignalT
-}
-
-export type CacheWritePort = {
-	// Inputs
-	write: SignalT
-	dirty: SignalT
-	address: SignalT
-	data: SignalT
-
-	// Outputs
-	complete: SignalT
-	evict: SignalT
-	evictAddress: SignalT // NOTE: should be an in_out with the normal address lines
-	evictData: SignalT // NOTE: should be an in_out with the normal data lines
-}
-
-export class CacheModule extends GWModule {
-	public readonly clk: SignalT = this.input(Signal())
-	public readonly rst: SignalT = this.input(Signal())
-
-	public readonly readPorts: CacheReadPort[]
-	public readonly writePorts: CacheWritePort[]
-
-	private readonly _ways: {
-		valids: SignalT
-		dirtys: SignalT
-		tags: SignalArrayT
-		data: SignalArrayT
-	}[]
-
-	private readonly _readPorts: {
-		inProgress: SignalT
-		compareTag: SignalT
-		ways: {
-			loadedValid: SignalT
-			loadedTag: SignalT
-			loadedData: SignalT
-			match: SignalT
-		}[]
-	}[]
-
-	private readonly _writePorts: {
-		// Cycle 1 registers
-		inProgress: SignalT
-		dirty: SignalT
-		compareTag: SignalT
-		selector: SignalT
-		writeData: SignalT
-		preSelectedWay: SignalT
-		
-		// Cycle 2 wires
-		anyMatch: SignalT
-		allValid: SignalT
-		selectedWay: SignalT
-
-		evict: SignalT
-		evictAddress: SignalT
-		evictData: SignalT
-
-		ways: {
-			// Per-way registers
-			loadedValid: SignalT
-			loadedDirty: SignalT
-			loadedTag: SignalT
-			loadedData: SignalT
-
-			// Per-way wires
-			match: SignalT
-		}[]
-	}[]
-
-	private readonly _selectorStartBit: number
-	private readonly _selectorEndBit: number
-
+export class CacheModule extends BasicModule {
 	public constructor(
 		name: string,
-		private readonly _desc: CacheDesc,
+		desc: CacheDesc,
 	) {
-		super(name)
+		const dataWidth = 8 * desc.widthBytes
+		const shiftWidth = Math.ceil(Math.log2(desc.widthBytes))
+		const selectorWidth = Math.ceil(Math.log2(desc.rows))
+		const tagWidth = desc.addressBits - selectorWidth - shiftWidth
+		const wayWidth = Math.ceil(Math.log2(desc.ways + 1))
 
-		const selectorWidth = Math.ceil(Math.log2(_desc.rows))
-		this._selectorStartBit = Math.ceil(Math.log2(_desc.widthBytes))
-		this._selectorEndBit = this._selectorStartBit + selectorWidth - 1
-		const tagWidth = _desc.addressBits - selectorWidth - this._selectorStartBit
-		const dataWidth = 8 * _desc.widthBytes
+		assert(Math.pow(2, shiftWidth) === desc.widthBytes, `Width must by a power of two bytes`)
+		assert(Math.pow(2, selectorWidth) === desc.rows, `Rows must be a power of two`)
 
-		this._ways = [...Array(_desc.ways)].map((_, i) => {
-			return {
-				valids: this.createInternal(`way_${i}_valids`, Signal(_desc.rows)),
-				dirtys: this.createInternal(`way_${i}_dirtys`, Signal(_desc.rows)),
-				tags: this.createInternal(`way_${i}_tags`, SignalArray(tagWidth, _desc.rows)),
-				data: this.createInternal(`way_${i}_data`, SignalArray(dataWidth, _desc.rows)),
-			}
-		})
+		super(name, {
+			inputs: {
+				...Object.fromEntries([...Array(desc.readPorts)].flatMap((_, portIndex) => [
+					[`read_${portIndex}`, 1],
+					[`read_address_${portIndex}`, desc.addressBits],
+				])),
+				...Object.fromEntries([...Array(desc.writePorts)].flatMap((_, portIndex) => [
+					[`write_${portIndex}`, 1],
+					[`write_valid_${portIndex}`, 1],
+					[`write_dirty_${portIndex}`, 1],
+					[`write_address_${portIndex}`, desc.addressBits],
+					[`write_data_${portIndex}`, dataWidth],
+				])),
+			},
+			outputs: {
+				...Object.fromEntries([...Array(desc.readPorts)].flatMap((_, portIndex) => [
+					[`read_complete_${portIndex}`, 1],
+					[`read_hit_${portIndex}`, 1],
+					[`read_data_${portIndex}`, dataWidth],
+				])),
+				...Object.fromEntries([...Array(desc.writePorts)].flatMap((_, portIndex) => [
+					[`write_complete_${portIndex}`, 1],
+					[`write_evict_${portIndex}`, 1],
+					[`write_evict_address_${portIndex}`, desc.addressBits],
+					[`write_evict_data_${portIndex}`, dataWidth],
+				])),
+			},
+			internals: {
+				...Object.fromEntries([...Array(desc.ways)].flatMap((_, wayIndex) => [
+					[`valids_${wayIndex}`, desc.rows],
+					[`dirtys_${wayIndex}`, desc.rows],
+					...[...Array(desc.readPorts)].flatMap((_, portIndex) => [
+						[`read_valid_buf_${wayIndex}_${portIndex}`, 1],
+						[`read_tag_buf_${wayIndex}_${portIndex}`, tagWidth],
+						[`read_data_buf_${wayIndex}_${portIndex}`, dataWidth],
 
-		this._readPorts = [...Array(_desc.readPorts)].map((_, i) => {
-			return {
-				inProgress: this.createInternal(`read_port_${i}_in_progress`, Signal()),
-				compareTag: this.createInternal(`read_port_${i}_compare_tag`, Signal(tagWidth)),
-				ways: [...Array(_desc.ways)].map((_, j) => {
-					return {
-						loadedValid: this.createInternal(`read_port_${i}_way_${j}_valid`, Signal()),
-						loadedTag: this.createInternal(`read_port_${i}_way_${j}_tag`, Signal(tagWidth)),
-						loadedData: this.createInternal(`read_port_${i}_way_${j}_loaded_data`, Signal(dataWidth)),
-						match: this.createInternal(`read_port_${i}_way_${j}_match`, Signal()),
-					}
-				})
-			}
-		})
-
-		const wayWidth = Math.ceil(Math.log2(_desc.ways))
-		this._writePorts = [...Array(_desc.writePorts)].map((_, i) => {
-			return {
-				inProgress: this.createInternal(`write_port_${i}_in_progress`, Signal()),
-				dirty: this.createInternal(`write_port_${i}_dirty`, Signal()),
-				compareTag: this.createInternal(`write_port_${i}_compare_tag`, Signal(tagWidth)),
-				selector: this.createInternal(`write_port_${i}_selector`, Signal(selectorWidth)),
-				writeData: this.createInternal(`write_port_${i}_write_data`, Signal(dataWidth)),
-				
-				anyMatch: this.createInternal(`write_port_${i}_any_match`, Signal()),
-				allValid: this.createInternal(`write_port_${i}_all_valid`, Signal()),
-				preSelectedWay: this.createInternal(`write_port_${i}_pre_selected_way`, Signal(wayWidth)),
-				selectedWay: this.createInternal(`write_port_${i}_selected_way`, Signal(wayWidth)),
-
-				evict: this.createInternal(`write_port_${i}_evict`, Signal()),
-				evictAddress: this.createInternal(`write_port_${i}_evict_address`, Signal(_desc.addressBits)),
-				evictData: this.createInternal(`write_port_${i}_evict_data`, Signal(dataWidth)),
-
-				ways: [...Array(_desc.ways)].map((_, j) => {
-					return {
-						loadedValid: this.createInternal(`write_port_${i}_way_${j}_valid`, Signal()),
-						loadedDirty: this.createInternal(`write_port_${i}_way_${j}_dirty`, Signal()),
-						loadedTag: this.createInternal(`write_port_${i}_way_${j}_tag`, Signal(tagWidth)),
-						loadedData: this.createInternal(`write_port_${i}_way_${j}_loaded_data`, Signal(dataWidth)),
-						match: this.createInternal(`write_port_${i}_way_${j}_match`, Signal()),
-					}
-				})
-			}
-		})
-
-		this.readPorts = [...Array(_desc.readPorts)].map((_, i) => {
-			return {
-				read: this.createInput(`read_${i}`, Signal()),
-				address: this.createInput(`read_address_${i}`, Signal(_desc.addressBits)),
-
-				complete: this.createOutput(`read_complete_${i}`, Signal()),
-				hit: this.createOutput(`read_hit_${i}`, Signal()),
-				data: this.createOutput(`read_data_${i}`, Signal(dataWidth)),
-			}
-		})
-
-		this.writePorts = [...Array(_desc.readPorts)].map((_, i) => {
-			return {
-				write: this.createInput(`write_${i}`, Signal()),
-				dirty: this.createInput(`write_dirty_${i}`, Signal()),
-				address: this.createInput(`write_address_${i}`, Signal(_desc.addressBits)),
-				data: this.createInput(`write_data_${i}`, Signal(dataWidth)),
-				
-				complete: this.createOutput(`write_complete_${i}`, Signal()),
-				evict: this.createOutput(`write_evict_${i}`, Signal()),
-				evictAddress: this.createOutput(`write_evict_address_${i}`, Signal(_desc.addressBits)),
-				evictData: this.createOutput(`write_evict_data_${i}`, Signal(dataWidth)),
-			}
-		})
-	}
-
-	public describe(): void {
-		this.combinationalLogic([
-			// Wire up read port match logic
-			...this._readPorts.flatMap(({ ways, compareTag }) => {
-				return ways.map(({ match, loadedValid, loadedTag }) => {
-					return match ['='] (loadedValid ['&&'] (loadedTag ['=='] (compareTag)))
-				})
-			}),
-
-			// Wire up write port match logic
-			...this._writePorts.flatMap(({ ways, compareTag }) => {
-				return ways.map(({ match, loadedValid, loadedTag }) => {
-					return match ['='] (loadedValid ['&&'] (loadedTag ['=='] (compareTag)))
-				})
-			}),
-
-			// Wire up internal write port logic
-			...this._writePorts.flatMap(({ selector, selectedWay, preSelectedWay, ways, anyMatch, allValid, evict, evictAddress, evictData }) => {
-				const matches = ways.map(({ match }) => match)
-				const valids = ways.map(({ loadedValid, loadedDirty }) => loadedValid ['&&'] (loadedDirty))
-
-				const lineWidth = Math.ceil(Math.log2(this._desc.widthBytes))
-
-				return [
-					anyMatch ['='] (orAll(matches)),
-					allValid ['='] (andAll(valids)),
-					selectedWay ['='] (Ternary(anyMatch, findFirstSet(matches), Ternary(allValid, preSelectedWay, findFirstSet(valids)))),
-
-					evict ['='] (LogicalNot(anyMatch) ['&&'] (allValid)),
-					evictAddress ['='] (indexArray(ways.map(({ loadedTag }) => Concat([loadedTag, selector, Constant(lineWidth, 0)])), preSelectedWay)),
-					evictData ['='] (indexArray(ways.map(({ loadedData }) => loadedData), preSelectedWay)),
-				]
-			})
-		])
-
-		this.syncBlock(this.clk, Edge.Negative, [
-			If(this.rst ['=='] (HIGH), [
-				...clearRegs([
-					...this.readPorts.flatMap(({ complete, hit, data }) => [complete, hit, data]),
-					...this.writePorts.flatMap(({ complete, evict, evictAddress, evictData }) => [complete, evict, evictAddress, evictData]),
-					...this._readPorts.flatMap(({ inProgress, compareTag, ways }) => [
-						inProgress,
-						compareTag,
-						...ways.flatMap(({ loadedValid, loadedTag, loadedData }) => [loadedValid, loadedTag, loadedData]),
+						[`read_match_${wayIndex}_${portIndex}`, 1]
 					]),
-					...this._writePorts.flatMap(({ inProgress, dirty, compareTag, selector, writeData, preSelectedWay, ways }) => [
-						inProgress,
-						dirty,
-						compareTag,
-						selector,
-						writeData,
-						preSelectedWay,
-						...ways.flatMap(({ loadedValid, loadedDirty, loadedTag, loadedData }) => [loadedValid, loadedDirty, loadedTag, loadedData]),
+					...[...Array(desc.writePorts)].flatMap((_, portIndex) => [
+						[`write_valid_buf_${wayIndex}_${portIndex}`, 1],
+						[`write_dirty_buf_${wayIndex}_${portIndex}`, 1],
+						[`write_tag_buf_${wayIndex}_${portIndex}`, tagWidth],
+						[`write_data_buf_${wayIndex}_${portIndex}`, dataWidth],
+
+						[`write_match_${wayIndex}_${portIndex}`, 1],
 					]),
-				])
-			]).Else([
-				// Update read port registers
-				...this.readCycle1(),
-				...this.readCycle2(),
+				])),
+				...Object.fromEntries([...Array(desc.readPorts)].flatMap((_, portIndex) => [
+					[`read_in_progress_${portIndex}`, 1],
+					[`read_selector_${portIndex}`, selectorWidth],
+					[`read_compare_tag_${portIndex}`, tagWidth],
+				])),
+				...Object.fromEntries([...Array(desc.writePorts)].flatMap((_, portIndex) => [
+					[`write_in_progress_${portIndex}`, 1],
+					[`write_selector_${portIndex}`, selectorWidth],
+					[`write_compare_tag_${portIndex}`, tagWidth],
 
-				// Update write port registers
-				...this.writeCycle1(),
-				...this.writeCycle2(),
-			])
-		])
-	}
+					[`write_data_selector_buf_${portIndex}`, selectorWidth],
+					[`write_data_valid_buf_${portIndex}`, 1],
+					[`write_data_dirty_buf_${portIndex}`, 1],
+					[`write_data_data_buf_${portIndex}`, dataWidth],
 
-	private readCycle1(): BlockStatement[] {
-		// For each read port
-		return this._readPorts.flatMap(({ inProgress, compareTag, ways }, portIndex) => {
-			// Load the IO port and get the address selector
-			const port = this.readPorts[portIndex]
-			const selector = port.address.slice(this._selectorStartBit, this._selectorEndBit)
+					[`write_any_match_${portIndex}`, 1],
+					[`write_all_valid_${portIndex}`, 1],
+					[`write_pre_evict_${portIndex}`, 1],
+					[`write_pre_selected_way_${portIndex}`, wayWidth],
+					[`write_selected_way_${portIndex}`, wayWidth]
+				])),
+			},
+			arrays: Object.fromEntries([...Array(desc.ways)].flatMap((_, wayIndex) => [
+				[`tags_${wayIndex}`, [tagWidth, desc.rows]],
+				[`data_${wayIndex}`, [dataWidth, desc.rows]],
+			])),
+			registerOutputs: true,
+			registers: [
+				...[...Array(desc.ways)].flatMap((_, wayIndex) => [`valids_${wayIndex}`]),
+			],
+			logic: (state, arrays) => {
+				return {
+					logic: [
+						// Connect read and write selectors and write way selection logic
+						...[...Array(desc.readPorts)].flatMap((_, portIndex) => [
+							state[`read_selector_${portIndex}`] ['='] (state[`read_address_${portIndex}`].slice(shiftWidth, shiftWidth + selectorWidth - 1)),
+						]),
+						...[...Array(desc.writePorts)].flatMap((_, portIndex) => {
+							const anyMatch = state[`write_any_match_${portIndex}`]
 
-			return [
-				inProgress ['='] (port.read),
-				compareTag ['='] (port.address.slice(this._selectorEndBit + 1, port.address.width - 1)),
-				...ways.flatMap(({ loadedValid, loadedTag, loadedData }, wayIndex) => {
-					// Read the selected data in each way to the read port/way's compare buffer
-					return [
-						loadedValid ['='] ((this._ways[wayIndex].valids ['>>'] (selector)) ['&'] (Constant(1, 1))),
-						loadedTag ['='] (this._ways[wayIndex].tags.at(selector)),
-						loadedData ['='] (this._ways[wayIndex].data.at(selector)),
-					]
-				})
-			]
-		})
-	}
+							const selectMatch = firstSetIndex([...Array(desc.ways)].map((_, wayIndex) => state[`write_match_${wayIndex}_${portIndex}`]))
+							const selectInvalid = firstSetIndex([...Array(desc.ways)].map((_, wayIndex) => LogicalNot(state[`write_valid_buf_${wayIndex}_${portIndex}`])))
+							const selectNoMatch = Ternary(state[`write_all_valid_${portIndex}`], state[`write_pre_selected_way_${portIndex}`], selectInvalid)
+							const selectedWay = Ternary(anyMatch, selectMatch, selectNoMatch)
 
-	private readCycle2(): BlockStatement[] {
-		// For each read port
-		return this._readPorts.flatMap(({ inProgress, ways }, portIndex) => {
-			const port = this.readPorts[portIndex]
+							return [
+								state[`write_selector_${portIndex}`] ['='] (state[`write_address_${portIndex}`].slice(shiftWidth, shiftWidth + selectorWidth - 1)),
+								state[`write_all_valid_${portIndex}`] ['='] (logicalOpAll('&&', [...Array(desc.ways)].map((_, wayIndex) => state[`write_valid_buf_${wayIndex}_${portIndex}`]))),
+								anyMatch ['='] (logicalOpAll('||', [...Array(desc.ways)].map((_, wayIndex) => state[`write_match_${wayIndex}_${portIndex}`]))),
+								state[`write_pre_evict_${portIndex}`] ['='] (Not(anyMatch) ['&&'] (state[`write_all_valid_${portIndex}`])),
+								state[`write_selected_way_${portIndex}`] ['='] (selectedWay),
+							]
+						}),
 
-			return [
-				port.complete ['='] (inProgress),
-				// Hit when any way hits
-				port.hit ['='] (orAll(ways.map(({ match }) => match))),
-				// Selected way is the first matching way
-				port.data ['='] (muxAll(ways.map(({ match, loadedData }) => ({ data: loadedData, select: match })))),
-			]
-		})
-	}
+						// Connect match lines
+						...[...Array(desc.ways)].flatMap((_, wayIndex) => [
+							...[...Array(desc.readPorts)].map((_, portIndex) => {
+								const valid = state[`read_valid_buf_${wayIndex}_${portIndex}`]
+								const tagMatch = state[`read_compare_tag_${portIndex}`] ['=='] (state[`read_tag_buf_${wayIndex}_${portIndex}`])
 
-	private writeCycle1(): BlockStatement[] {
-		// Foreach write port
-		return this._writePorts.flatMap(({ inProgress, dirty, compareTag, selector, writeData, preSelectedWay, ways }, portIndex) => {
-			// Load the IO port and get the address selector
-			const port = this.writePorts[portIndex]
-			const selectorValue = port.address.slice(this._selectorStartBit, this._selectorEndBit)
+								return state[`read_match_${wayIndex}_${portIndex}`] ['='] (valid ['&&'] (tagMatch))
+							}),
+							...[...Array(desc.writePorts)].map((_, portIndex) => {
+								const valid = state[`write_valid_buf_${wayIndex}_${portIndex}`]
+								const tagMatch = state[`write_compare_tag_${portIndex}`] ['=='] (state[`write_tag_buf_${wayIndex}_${portIndex}`])
 
-			return [
-				// Update internal registers
-				inProgress ['='] (port.write),
-				dirty ['='] (port.dirty),
-				compareTag ['='] (port.address.slice(this._selectorEndBit + 1, port.address.width - 1)),
-				selector ['='] (selectorValue),
-				writeData ['='] (port.data),
-				// Store selected way so it's available for and evict
-				preSelectedWay ['='] (port.address.slice(this._selectorEndBit + 1, this._selectorEndBit + preSelectedWay.width)),
+								return state[`write_match_${wayIndex}_${portIndex}`] ['='] (valid ['&&'] (tagMatch))
+							}),
+						]),
+					],
+					state: [
+						// Copy data forward to next cycle
+						...[...Array(desc.readPorts)].flatMap((_, portIndex) => [
+							state[`read_in_progress_${portIndex}`] ['='] (state[`read_${portIndex}`]),
+							state[`read_compare_tag_${portIndex}`] ['='] (state[`read_address_${portIndex}`].slice(shiftWidth + selectorWidth, desc.addressBits - 1)),
+						]),
+						...[...Array(desc.writePorts)].flatMap((_, portIndex) => [
+							state[`write_in_progress_${portIndex}`] ['='] (state[`write_${portIndex}`]),
+							state[`write_compare_tag_${portIndex}`] ['='] (state[`write_address_${portIndex}`].slice(shiftWidth + selectorWidth, desc.addressBits - 1)),
+							state[`write_data_selector_buf_${portIndex}`] ['='] (state[`write_selector_${portIndex}`]),
 
-				// Load from ways
-				...ways.flatMap(({ loadedValid, loadedTag, loadedData }, wayIndex) => {
-					return [
-						loadedValid ['='] ((this._ways[wayIndex].valids ['>>'] (selectorValue)) ['&'] (Constant(1, 1))),
-						loadedTag ['='] (this._ways[wayIndex].tags.at(selectorValue)),
-						loadedData ['='] (this._ways[wayIndex].data.at(selectorValue)),
-					]
-				})
-			]
-		})
-	}
+							state[`write_data_valid_buf_${portIndex}`] ['='] (state[`write_valid_${portIndex}`]),
+							state[`write_data_dirty_buf_${portIndex}`] ['='] (state[`write_dirty_${portIndex}`]),
+							state[`write_data_data_buf_${portIndex}`] ['='] (state[`write_data_${portIndex}`]),
+						]),
 
-	private writeCycle2(): BlockStatement[] {
-		// Foreach write port
-		return this._writePorts.flatMap(({ inProgress, compareTag, selector, selectedWay, writeData, dirty, evict, evictAddress, evictData }, portIndex) => {
-			const port = this.writePorts[portIndex]
+						// Cycle one for read/write ops, loading data from arrays
+						...[...Array(desc.ways)].flatMap((_, wayIndex) => [
+							...[...Array(desc.readPorts)].flatMap((_, portIndex) => {
+								const selector = state[`read_selector_${portIndex}`]
 
-			return [
-				// Update output ports
-				port.complete ['='] (inProgress),
-				port.evict ['='] (evict),
-				port.evictAddress ['='] (evictAddress),
-				port.evictData ['='] (evictData),
+								return [
+									state[`read_valid_buf_${wayIndex}_${portIndex}`] ['='] ((state[`valids_${wayIndex}`] ['>>'] (selector)) ['&'] (Constant(1, 1))),
+									state[`read_tag_buf_${wayIndex}_${portIndex}`] ['='] (arrays[`tags_${wayIndex}`].at(selector)),
+									state[`read_data_buf_${wayIndex}_${portIndex}`] ['='] (arrays[`data_${wayIndex}`].at(selector)),
+								]
+							}),
+							...[...Array(desc.writePorts)].flatMap((_, portIndex) => {
+								const selector = state[`write_selector_${portIndex}`]
 
-				// Update internal state
-				If(inProgress, [
-					Switch(selectedWay, this._ways.map(({ valids, dirtys, tags, data }, wayIndex) => {
-						return Case(wayIndex, [
-							valids ['='] (valids ['|'] (Constant(valids.width, 1) ['<<'] (selector))),
-							dirtys ['='] (dirtys ['|'] (dirty ['<<'] (selector))),
-							tags.at(selector) ['='] (compareTag),
-							data.at(selector) ['='] (writeData),
-						])
-					}))
-				]),
-			]
+								return [
+									state[`write_valid_buf_${wayIndex}_${portIndex}`] ['='] ((state[`valids_${wayIndex}`] ['>>'] (selector)) ['&'] (Constant(1, 1))),
+									state[`write_tag_buf_${wayIndex}_${portIndex}`] ['='] (arrays[`tags_${wayIndex}`].at(selector)),
+									state[`write_data_buf_${wayIndex}_${portIndex}`] ['='] (arrays[`data_${wayIndex}`].at(selector)),
+								]
+							}),
+						]),
+
+						// Cycle two for read/write ops, generating output
+						...[...Array(desc.readPorts)].flatMap((_, portIndex) => [
+							state[`read_complete_${portIndex}`] ['='] (state[`read_in_progress_${portIndex}`]),
+							state[`read_hit_${portIndex}`] ['='] (logicalOpAll('||', [...Array(desc.ways)].map((_, wayIndex) => state[`read_match_${wayIndex}_${portIndex}`]))),
+							state[`read_data_${portIndex}`] ['='] (
+								prioritySelector([...Array(desc.ways)].map((_, wayIndex) => [state[`read_data_buf_${wayIndex}_${portIndex}`], state[`read_match_${wayIndex}_${portIndex}`]]), dataWidth)
+							),
+						]),
+						...[...Array(desc.writePorts)].flatMap((_, portIndex) => [
+							state[`write_complete_${portIndex}`] ['='] (state[`write_in_progress_${portIndex}`]),
+							state[`write_evict_${portIndex}`] ['='] (state[`write_pre_evict_${portIndex}`]),
+							If(state[`write_in_progress_${portIndex}`], [...Array(desc.ways)].map((_, wayIndex) => {
+								const selector = state[`write_data_selector_buf_${portIndex}`]
+
+								return If(state[`write_selected_way_${portIndex}`] ['=='] (Constant(state[`write_selected_way_${portIndex}`].width, wayIndex)), [
+									state[`valids_${wayIndex}`] ['='] (state[`valids_${wayIndex}`] ['|'] (state[`write_data_valid_buf_${portIndex}`] ['<<'] (selector))),
+									state[`dirtys_${wayIndex}`] ['='] (state[`write_data_valid_buf_${portIndex}`]),
+									arrays[`tags_${wayIndex}`].at(selector) ['='] (state[`write_compare_tag_${portIndex}`]),
+									arrays[`data_${wayIndex}`].at(selector) ['='] (state[`write_data_data_buf_${portIndex}`]),
+								])
+							})),
+						]),
+					],
+				}
+			}
 		})
 	}
 }

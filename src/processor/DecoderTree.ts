@@ -1,113 +1,96 @@
-import assert from 'assert'
-import { GWModule, SignalT, Signal, Ternary, Constant, SignalLike } from 'gateware-ts'
-import { OperationDesc, UnitIndex } from './Description'
-import { ArgInfoMap } from './Types'
+import { SignalLike, Constant, Ternary } from "gateware-ts"
+import { UnitIndex, DecoderTreeDesc, OperationDesc } from "./Description"
+import { BasicModule } from "./Module"
 
 type DecoderTreeInner = {
-	opcode: UnitIndex
+	unit: UnitIndex
 } | {
 	zero: DecoderTreeInner
 	one: DecoderTreeInner
 }
 
-export class DecoderTreeModule extends GWModule {
-	public decodeInput: SignalT = Signal()
-
-	public opcode: SignalT = Signal()
-	public args: SignalT = Signal()
-
-	private readonly _inner: DecoderTreeInner
-	private readonly _opcodeArgWidths: number[]
-
+export class DecoderTreeModule extends BasicModule {
 	public constructor(
 		name: string,
-		ops: OperationDesc[],
-		private readonly _argInfo: ArgInfoMap,
-		opcodeWidth = Math.ceil(Math.log2(ops.length)),
+		desc: DecoderTreeDesc,
+		units: OperationDesc[],
 	) {
-		assert(ops.length >= 1)
-		assert(opcodeWidth >= Math.ceil(Math.log2(ops.length)))
+		let tree: DecoderTreeInner
+		if (desc.ops.length === 1) {
+			tree = { unit: 0 }
+		} else {
+			// Map entries to a tree/weight(bit length) pair
+			const mappedEntries: { tree: DecoderTreeInner, weight: number }[]
+				= desc.ops.map((unit, i) => ({ tree: { unit: i }, weight: Object.values(units[unit].inputs).reduce((sum, arg) => sum + arg.width, 0)  }))
+			
+			// Sort entries by weight
+			const sortedEntries = mappedEntries.sort(({ weight: lhs }, { weight: rhs }) => lhs - rhs)
 
-		super(name)
+			// Form the rest of the tree
+			while (sortedEntries.length > 2) {
+				const [{ tree: zero, weight: zeroWeight }, { tree: one, weight: oneWeight }] = sortedEntries.splice(0, 2)
+				const newNode = { tree: { zero, one }, weight: 1 + Math.max(zeroWeight, oneWeight) }
+				// TODO: Use a log search here instead of a linear search!
+				const insertIndex = sortedEntries.findIndex(({ weight }) => weight > newNode.weight)
+				if (insertIndex !== -1) {
+					sortedEntries.splice(insertIndex, 0, newNode)
+				} else {
+					sortedEntries.push(newNode)
+				}
+			}
 
-		// Get opcode arg widths
-		this._opcodeArgWidths = ops.map((op) => op.argTypes.reduce((accum, argType) => accum + this._argInfo[argType.tag].argBits, 0))
-
-		// Handle one entry special case
-		if (ops.length === 1) {
-			this._inner = { opcode: 0 }
-			return
-		}
-		
-		// Map and sort ops
-		const mappedEntries: { decoder: DecoderTreeInner, weight: number }[]
-			= ops.map((_, opcode) => ({ decoder: { opcode }, weight: this._opcodeArgWidths[opcode] }))
-		const sortedEntries = mappedEntries.sort(({ weight: lhs }, { weight: rhs }) => lhs === rhs ? 0 : lhs > rhs ? 1 : -1)
-
-		while (sortedEntries.length > 2) {
-			const [{ decoder: zero, weight: zeroWeight }, { decoder: one, weight: oneWeight }] = sortedEntries.splice(0, 2)
-			const newNode = { decoder: { zero, one }, weight: 1 + Math.max(zeroWeight, oneWeight) }
-			// TODO: Use a log search here instead of a linear search!
-			const insertIndex = sortedEntries.findIndex(({ weight }) => weight > newNode.weight)
-			if (insertIndex !== -1) {
-				sortedEntries.splice(insertIndex, 0, newNode)
-			} else {
-				sortedEntries.push(newNode)
+			tree = {
+				zero: sortedEntries[0].tree,
+				one: sortedEntries[1].tree,
 			}
 		}
 
-		this._inner = {
-			zero: sortedEntries[0].decoder,
-			one: sortedEntries[1].decoder,
-		}
-		
-		// Set up signals
-		this.decodeInput = this.input(Signal(this.getMaxTotalWidth()))
-		this.opcode = this.output(Signal(opcodeWidth))
-		this.args = this.output(Signal(this._opcodeArgWidths.reduce((max, val) => max > val ? max : val)))
+		// Compute the max width of a tree
+		const getMaxWidth = (tree: DecoderTreeInner) => 'unit' in tree
+			? Object.values(units[tree.unit].inputs).reduce((sum, arg) => sum + arg.width, 0)
+			: 1 + Math.max(getMaxWidth(tree.zero), getMaxWidth(tree.one))
+
+		// Compute the width of an opcode
+		const opcodeWidth = Math.ceil(Math.log2(desc.ops.length))
+
+		super(name, {
+			inputs: {
+				instruction: getMaxWidth(tree),
+			},
+			outputs: {
+				opcode: opcodeWidth,
+				args: desc.ops.reduce((max, op) => {
+					const opWidth = Object.values(units[op].inputs).reduce((sum, arg) => sum + arg.width, 0)
+					return max > opWidth ? max : opWidth
+				}, 0),
+			},
+			internals: {},
+			arrays: {},
+			modules: {},
+			logic: (state) => {
+				return {
+					logic: [
+						state.opcode ['='] (this.getOpcode(tree, state.instruction, opcodeWidth)),
+						state.args ['='] (this.getArgs(tree, state.instruction, state.args.width)),
+					],
+				}
+			}
+		})
 	}
 
-	public getMaxTotalWidth(inner?: DecoderTreeInner): number {
-		inner = inner ?? this._inner
-
-		if ('opcode' in inner) {
-			// Base case. Add up arg widths for opcode
-			const argsLength = (this._opcodeArgWidths[inner.opcode])
-			return argsLength
-		}
-	
-		// Recursive case. Find max of all branches total widths
-		const zeroWidth = this.getMaxTotalWidth(inner.zero)
-		const oneWidth = this.getMaxTotalWidth(inner.one)
-	
-		return 1 + (zeroWidth > oneWidth ? zeroWidth : oneWidth)
-	}
-
-	public describe(): void {
-		this.combinationalLogic([
-			this.opcode ['='] (this.getOpcode()),
-			this.args ['='] (this.decodeInput ['>>'] (this.getOpcodeBits())),
-		])
-	}
-
-	private getOpcode(inner?: DecoderTreeInner, index = 0): SignalLike {
-		inner = inner ?? this._inner
-
-		if ('opcode' in inner) {
-			return Constant(this.opcode.width, inner.opcode)
+	private getOpcode(inner: DecoderTreeInner, instruction: SignalLike, width: number, index = 0): SignalLike {
+		if ('unit' in inner) {
+			return Constant(width, inner.unit)
 		}
 
-		return Ternary(this.decodeInput.bit(index), this.getOpcode(inner.one, index + 1), this.getOpcode(inner.zero, index + 1))
+		return Ternary(instruction.bit(index), this.getOpcode(inner.one, instruction, width, index + 1), this.getOpcode(inner.zero, instruction, width, index + 1))
 	}
 
-	private getOpcodeBits(inner?: DecoderTreeInner, index = 0): SignalLike {
-		inner = inner ?? this._inner
-
-		const width = Math.ceil(Math.log2(this.decodeInput.width))
-		if ('opcode' in inner) {
-			return Constant(width, 0)
+	private getArgs(inner: DecoderTreeInner, instruction: SignalLike, argsLen: number, index = 0): SignalLike {
+		if ('unit' in inner) {
+			return instruction.slice(index, index + argsLen - 1)
 		}
 
-		return Constant(width, 1) ['+'] (Ternary(this.decodeInput.bit(index), this.getOpcodeBits(inner.one, index + 1), this.getOpcodeBits(inner.zero, index + 1)))
+		return Ternary(instruction.bit(index), this.getArgs(inner.one, instruction, argsLen, index + 1), this.getArgs(inner.zero, instruction, argsLen, index + 1))
 	}
 }

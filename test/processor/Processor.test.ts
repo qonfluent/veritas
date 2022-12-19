@@ -1,81 +1,53 @@
-import { randomInt } from 'crypto'
-import { CodeGenerator } from 'gateware-ts'
-import { CacheModule } from '../../src/processor/Cache'
-import { CacheControllerModule } from '../../src/processor/CacheController'
-import { DecoderModule } from '../../src/processor/Decoder'
-import { DecoderTreeModule } from '../../src/processor/DecoderTree'
-import { OperationDesc, DecoderDesc, CacheDesc, CacheControllerDesc } from '../../src/processor/Description'
-import { ArgHandler, ArgTag, DataTag } from '../../src/processor/Types'
+import { randomInt } from "crypto"
+import { CodeGenerator } from "gateware-ts"
+import { CacheModule } from "../../src/processor/Cache"
+import { DecoderModule } from "../../src/processor/Decoder"
+import { ArgType, DecoderDesc, OperationDesc } from "../../src/processor/Description"
 
-function randomOperationDesc(): OperationDesc {
+function randomOperation(): OperationDesc {
 	return {
-		opcode: 'op',
-		argTypes: [...Array(randomInt(5))].map(() => ({ tag: ArgTag.Reg, type: { tag: DataTag.Int, signed: false, width: 32 } })),
-		retTypes: [],
+		inputs: Object.fromEntries([...Array(randomInt(5))].map((_, i) => [`${i}`, {
+			type: ArgType.Immediate,
+			width: randomInt(1, 11),
+		}]))
 	}
 }
 
-function randomDecoderDesc(opCount: number, opts?: { shiftBits: number, regSize: number }): DecoderDesc {
-	return {
-		shiftBits: opts?.shiftBits ?? randomInt(0, 7),
-		groups: [...Array(randomInt(1, 17))].map(() => ({
-			lanes: [...Array(randomInt(1, 17))].map(() => ({
-				ops: [...Array(randomInt(1, 1025))].map(() => randomInt(opCount)),
-			}))
-		})),
+function randomDecoderDesc(): [DecoderDesc, OperationDesc[]] {
+	const ops = [...Array(randomInt(16, 1025))].map(() => randomOperation())
+
+	const result: DecoderDesc = {
+		shiftBits: 6,
+		groups: [...Array(3)].map(() => {
+			return [...Array(4)].map(() => {
+				return { ops: [...Array(16)].map(() => randomInt(ops.length)) }
+			})
+		})
 	}
+
+	return [result, ops]
 }
 
-describe('Operational Unit', () => {
-	it('Decoder tree', () => {
-		const ops: OperationDesc[] = [...Array(randomInt(1, 65))].map(() => randomOperationDesc())
-		const test = new DecoderTreeModule('test', ops, [{ argBits: 4, handler: ArgHandler.Immediate }])
+describe('Processor', () => {
+	it('Creates decoder', () => {
+		const [desc, units] = randomDecoderDesc()
+		const test = new DecoderModule('test', desc, units)
 
 		const cg = new CodeGenerator(test)
-		const verilog = cg.generateVerilogCodeForModule(test, false)
-		console.log(verilog)
+		console.log(cg.toVerilog())
 	})
 
-	it('Decoder', () => {
-		const units = [...Array(randomInt(10, 4097))].map(() => randomOperationDesc())
-		const test = new DecoderModule('test', randomDecoderDesc(units.length), units, [{ argBits: randomInt(2, 17), handler: ArgHandler.Immediate }])
-
-		const cg = new CodeGenerator(test)
-		const verilog = cg.generateVerilogCodeForModule(test, false)
-		console.log(verilog)
-	})
-
-	it('Cache', () => {
-		const desc: CacheDesc = {
+	it.only('Creates cache', () => {
+		const test = new CacheModule('test', {
 			addressBits: 48,
 			widthBytes: 64,
 			rows: 1024,
+			ways: 2,
 			readPorts: 2,
 			writePorts: 2,
-			ways: 4,
-		}
-
-		const test = new CacheModule('test', desc)
+		})
 
 		const cg = new CodeGenerator(test)
-		const verilog = cg.generateVerilogCodeForModule(test, false)
-		console.log(verilog)
-	})
-
-	it.only('Cache controller', () => {
-		const cacheDesc: CacheControllerDesc = {
-			addressBits: 48,
-			widthBytes: 64,
-			rows: 1024,
-			readPorts: 2,
-			writePorts: [false],
-			ways: 4,
-		}
-
-		const test = new CacheControllerModule('test', cacheDesc)
-
-		const cg = new CodeGenerator(test)
-		const verilog = cg.generateVerilogCodeForModule(test, false)
-		console.log(verilog)
+		console.log(cg.toVerilog())
 	})
 })
