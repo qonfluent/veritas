@@ -42,8 +42,8 @@ export type DecoderDesc = {
 
 export type CacheDescHeader = {
 	addressBits: number
-	widthBytes: number // Power of two
-	rows: number // Power of two
+	lineBits: number
+	selectorBits: number
 	ways: number
 }
 

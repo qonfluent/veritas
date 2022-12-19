@@ -9,14 +9,12 @@ export class CacheModule extends BasicModule {
 		name: string,
 		desc: CacheDesc,
 	) {
-		const dataWidth = 8 * desc.widthBytes
-		const shiftWidth = Math.ceil(Math.log2(desc.widthBytes))
-		const selectorWidth = Math.ceil(Math.log2(desc.rows))
+		const dataWidth = 8 * Math.pow(2, desc.lineBits)
+		const shiftWidth = desc.lineBits
+		const selectorWidth = desc.selectorBits
 		const tagWidth = desc.addressBits - selectorWidth - shiftWidth
 		const wayWidth = Math.ceil(Math.log2(desc.ways + 1))
-
-		assert(Math.pow(2, shiftWidth) === desc.widthBytes, `Width must by a power of two bytes`)
-		assert(Math.pow(2, selectorWidth) === desc.rows, `Rows must be a power of two`)
+		const rowCount = Math.pow(2, desc.selectorBits)
 
 		super(name, {
 			inputs: {
@@ -47,8 +45,8 @@ export class CacheModule extends BasicModule {
 			},
 			internals: {
 				...recordRangeFlatMap(desc.ways, (wayIndex) => [
-					[`valids_${wayIndex}`, desc.rows],
-					[`dirtys_${wayIndex}`, desc.rows],
+					[`valids_${wayIndex}`, rowCount],
+					[`dirtys_${wayIndex}`, rowCount],
 				]),
 				...recordRangeFlatMap2(desc.ways, desc.readPorts, (wayIndex, portIndex) => [
 					// Registers loaded during each access cycle
@@ -100,8 +98,8 @@ export class CacheModule extends BasicModule {
 				]),
 			},
 			arrays: recordRangeFlatMap(desc.ways, (wayIndex) => [
-				[`tags_${wayIndex}`, [tagWidth, desc.rows]],
-				[`data_${wayIndex}`, [dataWidth, desc.rows]],
+				[`tags_${wayIndex}`, [tagWidth, rowCount]],
+				[`data_${wayIndex}`, [dataWidth, rowCount]],
 			]),
 			registerOutputs: true,
 			registers: [

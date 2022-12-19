@@ -42,8 +42,8 @@ describe('Processor', () => {
 		// 192KB L1 cache
 		const test = new CacheModule('test', {
 			addressBits: 48,
-			widthBytes: 64,
-			rows: 128,
+			lineBits: 6,
+			selectorBits: 7,
 			ways: 24,
 			readPorts: 2,
 			writePorts: 2,
