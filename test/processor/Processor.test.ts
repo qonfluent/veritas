@@ -1,55 +1,75 @@
-import { randomInt } from "crypto"
-import { CodeGenerator } from "gateware-ts"
-import { CacheModule } from "../../src/processor/Cache"
-import { CacheControllerModule } from "../../src/processor/CacheController"
-import { DecoderModule } from "../../src/processor/Decoder"
-import { ArgType, DecoderDesc, OperationDesc } from "../../src/processor/Description"
+import { Module, moduleToVerilog, Stmt } from "../../src/hdl/Verilog"
+import { rangeFlatMap } from "../../src/Util"
 
-function randomOperation(): OperationDesc {
-	return {
-		inputs: Object.fromEntries([...Array(randomInt(5))].map((_, i) => [`${i}`, {
-			type: ArgType.Immediate,
-			width: randomInt(1, 11),
-		}]))
-	}
+export type CacheDesc = {
+	addressBits: number
+	shiftBits: number
+	selectorBits: number
+	dataBits: number
+	ways: number
+
+	readPorts: number
+	writePorts: number
+
+	tristateWriteBus: boolean
 }
 
-function randomDecoderDesc(): [DecoderDesc, OperationDesc[]] {
-	const ops = [...Array(randomInt(16, 1025))].map(() => randomOperation())
+export function cacheSizeBits(desc: CacheDesc): number {
+	const dataSize = desc.dataBits * 8
+	const rowCount = 2 ** desc.selectorBits
 
-	const result: DecoderDesc = {
-		shiftBits: 6,
-		groups: [...Array(3)].map(() => {
-			return [...Array(4)].map(() => {
-				return { ops: [...Array(16)].map(() => randomInt(ops.length)) }
-			})
-		})
+	return desc.ways * dataSize * rowCount
+}
+
+export function createCache(desc: CacheDesc): Module {
+	return {
+		name: 'cache',
+		body: [
+			// Clock and reset
+			{ signal: 'clk', width: 1, direction: 'input', type: 'wire' },
+			{ signal: 'rst', width: 1, direction: 'input', type: 'wire' },
+
+			// Read ports
+			...rangeFlatMap<Stmt>(desc.readPorts, (portIndex) => [
+				{ signal: `read_${portIndex}`, width: 1, direction: 'input' },
+				{ signal: `read_${portIndex}_address`, width: desc.addressBits, direction: 'input' },
+
+				{ signal: `read_${portIndex}_complete`, width: 1, direction: 'output' },
+				{ signal: `read_${portIndex}_hit`, width: 1, direction: 'output' },
+				{ signal: `read_${portIndex}_data`, width: desc.dataBits, direction: 'input' },
+			]),
+
+			// Write ports
+			...rangeFlatMap<Stmt>(desc.writePorts, (portIndex) => [
+				{ signal: `write_${portIndex}`, width: 1, direction: 'input' },
+				{ signal: `write_${portIndex}_address`, width: desc.addressBits, direction: 'input' },
+				{ signal: `write_${portIndex}_data`, width: desc.dataBits, direction: 'input' },
+
+				{ signal: `write_${portIndex}_complete`, width: 1, direction: 'output' },
+				{ signal: `write_${portIndex}_evict`, width: 1, direction: 'output' },
+				...(desc.tristateWriteBus ? [
+					{ signal: `write_${portIndex}_evict_address`, width: 1, direction: 'output' },
+					{ signal: `write_${portIndex}_evict_data`, width: 1, direction: 'output' },
+				] : []) as Stmt[],
+			]),
+		],
 	}
-
-	return [result, ops]
 }
 
 describe('Processor', () => {
-	it('Creates decoder', () => {
-		const [desc, units] = randomDecoderDesc()
-		const test = new DecoderModule('test', desc, units)
-
-		const cg = new CodeGenerator(test)
-		console.log(cg.toVerilog())
-	})
-
-	it('Creates L1 cache', () => {
-		// 192KB L1 cache
-		const test = new CacheModule('test', {
-			addressBits: 48,
-			lineBits: 6,
+	it('Can create cache', () => {
+		const test = createCache({
+			addressBits: 32,
+			shiftBits: 6,
 			selectorBits: 7,
-			ways: 24,
+			dataBits: 8 * 64,
+			ways: 4,
 			readPorts: 2,
 			writePorts: 2,
+			tristateWriteBus: true,
 		})
 
-		const cg = new CodeGenerator(test)
-		console.log(cg.toVerilog())
+		const code = moduleToVerilog(test)
+		console.log(code)
 	})
 })
