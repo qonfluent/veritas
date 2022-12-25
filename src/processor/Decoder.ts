@@ -1,7 +1,7 @@
 import assert from 'assert'
 import { Module, RExpr, Stmt } from '../hdl/Verilog'
-import { rangeFlatMap, rangeMap } from '../Util'
-import { createDecoderTree, fillDecoderTree, getArgsBits, getInstructionBits, getOpcodeBits } from './DecoderTree'
+import { clog2, rangeFlatMap, rangeMap } from '../Util'
+import { createDecoderTree, DecoderTreeDescFull, fillDecoderTree, getArgsBits, getInstructionBits, getOpcodeBits } from './DecoderTree'
 
 export type DecoderDesc = {
 	groups: number[][][]
@@ -65,8 +65,8 @@ export function createDecoder(name: string, desc: DecoderDesc, operations: Opera
 
 	// Get header info
 	const minLength = laneLengths.reduce((sum, lanes) => sum + lanes[0], 0)
-	const shiftBits = Math.ceil(Math.log2((totalLength - minLength) / 8))
-	const laneCountLengths = laneLengths.map((lanes) => Math.ceil(Math.log2(lanes.length)))
+	const shiftBits = clog2((totalLength - minLength) / 8)
+	const laneCountLengths = laneLengths.map((lanes) => clog2(lanes.length))
 	const headerBits = shiftBits + laneCountLengths.reduce((sum, val) => sum + val, 0)
 	const instructionLength = headerBits + totalLength
 

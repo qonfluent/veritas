@@ -1,4 +1,3 @@
-import { randomInt } from "crypto"
 import { moduleToVerilog } from "../../src/hdl/Verilog"
 import { createCache } from "../../src/processor/Cache"
 import { createDecoder } from "../../src/processor/Decoder"

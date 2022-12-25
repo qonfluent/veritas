@@ -1,5 +1,5 @@
 import { Stmt, Module } from '../hdl/Verilog'
-import { rangeFlatMap } from '../Util'
+import { clog2, rangeFlatMap } from '../Util'
 
 export type CacheDesc = {
 	addressBits: number
@@ -46,7 +46,7 @@ export function createCachePorts(desc: CacheDesc): Stmt[] {
 export function createCache(name: string, desc: CacheDesc): Module {
 	const tagWidth = desc.addressBits - desc.selectorBits - desc.shiftBits
 	const rowCount = 2 ** desc.selectorBits
-	const waysBits = Math.ceil(Math.log2(desc.ways))
+	const waysBits = clog2(desc.ways)
 
 	return {
 		name,
