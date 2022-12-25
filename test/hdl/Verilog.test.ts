@@ -27,7 +27,7 @@ describe('Verilog', () => {
 					type: 'wire',
 				},
 			],
-		})
+		}, true)
 
 		expect(test).toBe('module test(\n\tinput wire [10:0] a,\n\toutput wire [10:0] b\n);\n\nendmodule')
 	})
@@ -47,7 +47,7 @@ describe('Verilog', () => {
 					type: 'reg',
 				},
 			],
-		})
+		}, true)
 
 		expect(test).toBe('module test();\n\n\twire [10:0] a;\n\treg [10:0] b;\n\nendmodule')
 	})
@@ -79,7 +79,7 @@ describe('Verilog', () => {
 					type: 'wire',
 				},
 			],
-		})
+		}, true)
 		expect(test).toBe('module test(\n\tinput wire [10:0] c,\n\toutput wire [10:0] d\n);\n\n\twire [3:0] a;\n\treg [10:0] b;\n\nendmodule')
 	})
 
@@ -97,7 +97,7 @@ describe('Verilog', () => {
 					signal: 'b',
 					width: 11,
 					direction: 'input',
-					type: 'reg',
+					type: 'wire',
 				},
 				{
 					signal: 'c',
@@ -109,7 +109,7 @@ describe('Verilog', () => {
 					signal: 'd',
 					width: 11,
 					direction: 'output',
-					type: 'wire',
+					type: 'reg',
 				},
 				{
 					assign: 'd',
@@ -164,7 +164,7 @@ describe('Verilog', () => {
 			],
 		})
 
-		expect(test).toBe('module test(\n\tinput wire [10:0] c,\n\toutput wire [10:0] d\n);\n\n\twire [3:0] a;\n\treg [10:0] b;\n\n\ttest_inner test_inner_inst (\n\t\t.a(a),\n\t\t.b(b),\n\t\t.c(c),\n\t\t.d(d)\n\t);\n\nendmodule')
+		expect(test).toBe('module test(\n\tinput wire [10:0] c,\n\toutput wire [10:0] d\n);\n\n\twire [3:0] a;\n\treg [10:0] b;\n\n\ttest_inner test_inner_inst (\n\t\t.a(a),\n\t\t.b(b),\n\t\t.c(c),\n\t\t.d(d)\n\t);\n\nendmodule\n\nmodule test_inner(\n\tinput wire [3:0] a,\n\tinput wire [10:0] b,\n\tinput wire [10:0] c,\n\toutput reg [10:0] d\n);\n\n\tassign d = a + (b + c);\n\nendmodule')
 	})
 
 	it('Module with assignments', () => {
@@ -392,7 +392,7 @@ describe('Verilog', () => {
 			],
 		})
 
-		expect(test).toBe('module test(\n\tinput wire clk,\n\toutput reg [31:0] count\n);\n\n\talways @(posedge clk) begin\n\t\tfor (i = 0; i < 10; i = i + 1) begin\n\t\t\tcount <= count + 1;\n\t\tend\n\tend\n\nendmodule')
+		expect(test).toBe('module test(\n\tinput wire clk,\n\toutput reg [31:0] count\n);\n\n\tinteger i;\n\n\talways @(posedge clk) begin\n\t\tfor (i = 0; i < 10; i = i + 1) begin\n\t\t\tcount <= count + 1;\n\t\tend\n\tend\n\nendmodule')
 	})
 
 	it('Module with unary operators', () => {

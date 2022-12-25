@@ -334,7 +334,7 @@ export function moduleToVerilog(module: Module, ignoreErrors = false, innerModul
 	let paddedModules = ''
 	if (innerModules) {
 		const uniqueModules = getUniqueModules(module)
-		paddedModules = '\n\n' + uniqueModules.map((module) => moduleToVerilog(module, ignoreErrors, false)).join('\n\n')
+		paddedModules = (uniqueModules.length > 0 ? '\n\n' : '') + uniqueModules.map((module) => moduleToVerilog(module, ignoreErrors, false)).join('\n\n')
 	}
 
 	// Generate result

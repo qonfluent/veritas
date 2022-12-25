@@ -30,7 +30,7 @@ describe('Processor', () => {
 		console.log(code)
 	})
 
-	it.only('Can create decoder', () => {
+	it('Can create decoder', () => {
 		const opCount = 16
 		const ops = rangeMap(opCount, (i) => i)
 		const units = rangeMap(opCount, () => ({ args: { a: 4, b: 4 } }))
