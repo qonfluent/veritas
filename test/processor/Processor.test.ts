@@ -46,7 +46,7 @@ describe('Processor', () => {
 			]
 		}, units)
 
-		const code = moduleToVerilog(test, true)
+		const code = moduleToVerilog(test)
 		console.log(code)
 	})
 
@@ -59,5 +59,8 @@ describe('Processor', () => {
 			decoders: rangeMap(2, () => randomDecoderDesc(3, 4, 16, units)),
 			operations: units,
 		})
+
+		const code = moduleToVerilog(test, true)
+		console.log(code)
 	})
 })

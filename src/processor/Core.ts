@@ -1,4 +1,4 @@
-import { Module } from '../hdl/Verilog'
+import { Module, SignalDefStmt } from '../hdl/Verilog'
 import { createDecoder, DecoderDesc, OperationArgs } from './Decoder'
 
 export type OperationDesc = OperationArgs
@@ -9,6 +9,8 @@ export type CoreDesc = {
 }
 
 export function createCore(name: string, desc: CoreDesc): Module {
+	const decoders = desc.decoders.map((decoder, i) => createDecoder(`decoder_${i}`, decoder, desc.operations))
+	
 	return {
 		name,
 		body: [
@@ -16,10 +18,15 @@ export function createCore(name: string, desc: CoreDesc): Module {
 			{ signal: 'rst', width: 1, direction: 'input' },
 
 			// Decoder modules
-			...desc.decoders.map((decoder, i) => ({
+			...decoders.map((module, i) => ({
 				instance: `decoder_${i}`,
-				module: createDecoder(`decoder_${i}`, decoder, desc.operations),
-				ports: {},
+				module,
+				ports: {
+					clk: 'clk',
+					rst: 'rst',
+
+					instruction: { slice: `instruction_stream_${i}`, start: 0, end: module.body.find((stmt): stmt is SignalDefStmt => 'signal' in stmt && stmt.signal === 'instruction')!.width },
+				},
 			})),
 		],
 	}

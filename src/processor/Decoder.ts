@@ -1,4 +1,5 @@
 import assert from 'assert'
+import { signedShift, indexTable, reverseBits } from '../hdl/Util'
 import { Module, RExpr, Stmt } from '../hdl/Verilog'
 import { clog2, rangeFlatMap, rangeMap } from '../Util'
 import { createDecoderTree, DecoderTreeDescFull, fillDecoderTree, getArgsBits, getInstructionBits, getOpcodeBits } from './DecoderTree'
@@ -9,30 +10,6 @@ export type DecoderDesc = {
 
 export type OperationArgs = {
 	args: Record<string, number>
-}
-
-export function reverseBits(value: RExpr, bits: number): RExpr {
-	return { concat: rangeMap(bits, (i) => ({ index: value, start: i })) }
-}
-
-export function signedShift(value: RExpr, bits: number): RExpr {
-	if (bits === 0) {
-		return value
-	}
-
-	return { binary: bits > 0 ? '<<' : '>>', left: value, right: Math.abs(bits) }
-}
-
-export function indexTable(table: RExpr[], index: RExpr, offset = 0): RExpr {
-	if (table.length === 0) {
-		throw new Error('Cannot index empty table')
-	}
-
-	if (table.length === 1) {
-		return table[0]
-	}
-
-	return { ternary: { index, start: offset }, zero: indexTable(table.slice(0, table.length / 2), index, offset + 1), one: indexTable(table.slice(table.length / 2), index, offset + 1) }
 }
 
 export function shiftInstruction(instruction: RExpr, prefixBits: number, downCount: RExpr, downLengths: number[], upCount: RExpr, upLengths: number[]): RExpr {
@@ -151,6 +128,9 @@ export function createDecoder(name: string, desc: DecoderDesc, operations: Opera
 					...laneLengths.flatMap((lanes, i) => lanes.flatMap<Stmt>((_, j) => [
 						{ assign: `valid_${i}_${j}`, value: { binary: '>=', left: `lane_count_${i}`, right: j} },
 					])),
+
+					// Shift bytes output
+					{ assign: 'shiftBytes', value: { slice: 'instruction', start: 0, end: shiftBits - 1 } },
 				] },
 			]},
 		]
