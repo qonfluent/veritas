@@ -296,6 +296,17 @@ export function validateModule(module: Module): void {
 	if (duplicateVars.length > 0) {
 		throw new Error(`Duplicate variables: ${duplicateVars.join(', ')}`)
 	}
+
+	// Check that all ports are connected on all instances
+	const instances = module.body.filter((stmt): stmt is ModuleInstanceStmt => 'instance' in stmt)
+	instances.forEach((instance) => {
+		const instancePorts = Object.keys(instance.ports)
+		const modulePorts = instance.module.body.filter((stmt): stmt is SignalDefStmt => 'signal' in stmt && stmt.direction !== undefined).map((stmt) => stmt.signal)
+		const missingPorts = modulePorts.filter((port) => !instancePorts.includes(port))
+		if (missingPorts.length > 0) {
+			throw new Error(`Missing ports on instance ${instance.instance}: ${missingPorts.join(', ')}`)
+		}
+	})
 }
 
 export function moduleToVerilog(module: Module, ignoreErrors = false, innerModules = true): string {
