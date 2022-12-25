@@ -5,7 +5,17 @@ import { recordRangeMap, rangeMap } from '../src/Util'
 
 export function randomOperationArgs(maxArgBits: number, maxArgCount: number): OperationArgs {
 	return { args: recordRangeMap(randomInt(maxArgCount + 1), (i) => [`arg_${i}`, randomInt(maxArgBits) + 1]) }
-}	
+}
+
+export function randomDecoderDesc(groups: number, maxLanes: number, maxOpsPerLane: number, operations: OperationArgs[]): DecoderDesc {
+	return {
+		groups: rangeMap(groups, () => {
+			return rangeMap(randomInt(maxLanes) + 1, () => {
+				return rangeMap(randomInt(maxOpsPerLane) + 1, () => randomInt(operations.length))
+			})
+		})
+	}
+}
 
 export function randomEncoder(): Encoder {
 	let opCount = 0

@@ -1,3 +1,5 @@
+import { randomEncoder, randomInstruction } from "../Common"
+
 describe('Assembler', () => {
 	it('Can encode and decode instructions', () => {
 		const encoder = randomEncoder()

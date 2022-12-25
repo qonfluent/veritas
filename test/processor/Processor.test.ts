@@ -1,8 +1,10 @@
-import { moduleToVerilog } from "../../src/hdl/Verilog"
-import { createCache } from "../../src/processor/Cache"
-import { createDecoder } from "../../src/processor/Decoder"
-import { createDecoderTree, fillDecoderTree } from "../../src/processor/DecoderTree"
-import { rangeMap } from "../../src/Util"
+import { moduleToVerilog } from '../../src/hdl/Verilog'
+import { createCache } from '../../src/processor/Cache'
+import { createCore } from '../../src/processor/Core'
+import { createDecoder, DecoderDesc } from '../../src/processor/Decoder'
+import { createDecoderTree, fillDecoderTree } from '../../src/processor/DecoderTree'
+import { rangeMap } from '../../src/Util'
+import { randomDecoderDesc } from '../Common'
 
 describe('Processor', () => {
 	it('Can create cache', () => {
@@ -23,8 +25,8 @@ describe('Processor', () => {
 
 	it('Can create decoder tree', () => {
 		const opCount = 16
-		const ops = rangeMap(opCount, () => 8)
-		const test = createDecoderTree('test', fillDecoderTree({ argBits: ops }))
+		const ops = rangeMap(opCount, (i) => ({ opcode: i, args: { a: 4, b: 4 } }))
+		const test = createDecoderTree('test', fillDecoderTree({ ops }))
 
 		const code = moduleToVerilog(test)
 		console.log(code)
@@ -46,5 +48,16 @@ describe('Processor', () => {
 
 		const code = moduleToVerilog(test, true)
 		console.log(code)
+	})
+
+	it('Can create core', () => {
+		const opCount = 16
+		const ops = rangeMap(opCount, (i) => i)
+		const units = rangeMap(opCount, () => ({ args: { a: 4, b: 4 } }))
+
+		const test = createCore('test', {
+			decoders: rangeMap(2, () => randomDecoderDesc(3, 4, 16, units)),
+			operations: units,
+		})
 	})
 })

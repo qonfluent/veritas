@@ -46,12 +46,10 @@ export function shiftInstruction(instruction: RExpr, prefixBits: number, downCou
 export function createDecoderTreeDescriptions(desc: DecoderDesc, operations: OperationArgs[]): DecoderTreeDescFull[][] {
 	// Create the decoder trees for each lane
 	const trees = desc.groups.map((lanes) => lanes.map((ops) => fillDecoderTree({
-		argBits: ops.map((op) => {
-			const operation = operations[op]
-			assert(operation !== undefined, `Operation ${op} does not exist`)
-			
-			return Object.values(operation.args).reduce((sum, val) => sum + val, 0)
-		})
+		ops: ops.map((op) => ({
+			opcode: op,
+			args: operations[op].args,
+		})),
 	})))
 
 	return trees

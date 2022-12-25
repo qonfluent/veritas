@@ -1,26 +1,32 @@
 import assert from 'assert'
 import { Module, RExpr, Stmt } from '../hdl/Verilog'
+import { OperationArgs } from './Decoder'
 
-export type DecoderTreeDescSimple = {
-	argBits: number[]
+export type DecoderTreeEntry = OperationArgs & {
+	opcode: number
 }
 
-export type DecoderTreeDescFull = {
-	opcode: number
-	argBits: number
-} | {
+export type DecoderTreeDescSimple = {
+	ops: DecoderTreeEntry[]
+}
+
+export type DecoderTreeDescFull = DecoderTreeEntry | {
 	zero: DecoderTreeDescFull
 	one: DecoderTreeDescFull
 }
 
-export type DecoderTreeDesc = DecoderTreeDescSimple | DecoderTreeDescFull
+export function getArgBits(args: Record<string, number>): number {
+	return Object.values(args).reduce((sum, val) => sum + val, 0)
+}
 
 export function fillDecoderTree(desc: DecoderTreeDescSimple): DecoderTreeDescFull {
-	if (desc.argBits.length === 0) {
+	if (desc.ops.length === 0) {
 		throw new Error('Cannot create decoder tree with no operations')
 	}
 
-	const weightedTrees: { tree: DecoderTreeDescFull, width: number}[] = desc.argBits.map((argBits, i) => ({ tree: { opcode: i, argBits }, width: argBits }))
+	const weightedTrees: { tree: DecoderTreeDescFull, width: number}[] = desc.ops.map((entry) => {
+		return { tree: entry, width: getArgBits(entry.args) }
+	})
 	const sortedTrees = weightedTrees.sort((a, b) => a.width - b.width)
 
 	while (sortedTrees.length > 1) {
@@ -38,9 +44,9 @@ export function fillDecoderTree(desc: DecoderTreeDescSimple): DecoderTreeDescFul
 	return sortedTrees[0].tree
 }
 
-export function treeRecurse<T>(base: (opcode: number, argBits: number) => T, recur: (zero: T, one: T) => T, tree: DecoderTreeDescFull): T {
+export function treeRecurse<T>(base: (opcode: number, argBits: Record<string, number>) => T, recur: (zero: T, one: T) => T, tree: DecoderTreeDescFull): T {
 	if ('opcode' in tree) {
-		return base(tree.opcode, tree.argBits)
+		return base(tree.opcode, tree.args)
 	}
 
 	return recur(treeRecurse(base, recur, tree.zero), treeRecurse(base, recur, tree.one))
@@ -55,11 +61,12 @@ export function getOpcodeBits(tree: DecoderTreeDescFull): number {
 }
 
 export function getArgsBits(tree: DecoderTreeDescFull): number {
-	return treeRecurse((_, argBits) => argBits, (a, b) => Math.max(a, b), tree)
+
+	return getArgBits(treeRecurse((_, argBits) => argBits, (a, b) => ({ field: Math.max(getArgBits(a), getArgBits(b)) }), tree))
 }
 
 export function getInstructionBits(tree: DecoderTreeDescFull): number {
-	return treeRecurse((_, argBits) => argBits, (a, b) => 1 + Math.max(a, b), tree)
+	return getArgBits(treeRecurse((_, argBits) => argBits, (a, b) => ({ field: 1 + Math.max(getArgBits(a), getArgBits(b))}), tree))
 }
 
 export function getOpcode(tree: DecoderTreeDescFull, instruction: RExpr, index = 0): RExpr {
