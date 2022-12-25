@@ -15,8 +15,7 @@ describe('Processor', () => {
 			dataBits: 8 * 64,
 			ways: 4,
 			readPorts: 2,
-			writePorts: 2,
-			tristateWriteBus: true,
+			writePorts: [true, false],
 		})
 
 		const code = moduleToVerilog(test)
