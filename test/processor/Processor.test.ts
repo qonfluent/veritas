@@ -56,7 +56,10 @@ describe('Processor', () => {
 		const units = rangeMap(opCount, () => ({ args: { a: 4, b: 4 } }))
 
 		const test = createCore('test', {
-			decoders: rangeMap(2, () => randomDecoderDesc(3, 4, 16, units)),
+			decoders: rangeMap(2, () => ({
+				decoder: randomDecoderDesc(3, 4, 16, units),
+				streamBytes: 64,
+			})),
 			operations: units,
 		})
 
