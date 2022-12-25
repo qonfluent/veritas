@@ -1,19 +1,34 @@
 import assert from 'assert'
-import { Module, SignalDefStmt } from '../hdl/Verilog'
+import { Module, SignalDefStmt, Stmt } from '../hdl/Verilog'
 import { createDecoder, DecoderDesc, OperationArgs } from './Decoder'
 
-export type OperationDesc = OperationArgs
+export type ArgType = 'immediate' | 'register'
+
+export type ArgDesc = {
+	type: ArgType
+	encodedBits: number
+}
+
+export type OperationDesc = {
+	args: Record<string, ArgDesc>
+	body: Stmt[]
+}
 
 export type CoreDesc = {
 	decoders: {
 		decoder: DecoderDesc
 		streamBytes: number
 	}[]
+
 	operations: OperationDesc[]
 }
 
+export function getOperationArgs(operation: OperationDesc): OperationArgs {
+	return { args: Object.fromEntries(Object.entries(operation.args).map(([name, arg]) => [name, arg.encodedBits])) }
+}
+
 export function createCore(name: string, desc: CoreDesc): Module {
-	const decoders = desc.decoders.map((decoder, i) => createDecoder(`decoder_${i}`, decoder.decoder, desc.operations))
+	const decoders = desc.decoders.map((decoder, i) => createDecoder(`decoder_${i}`, decoder.decoder, desc.operations.map(getOperationArgs)))
 
 	decoders.forEach((decoder, i) => {
 		const instructionDef = decoder.body.find((stmt): stmt is SignalDefStmt => 'signal' in stmt && stmt.signal === 'instruction')
@@ -29,7 +44,7 @@ export function createCore(name: string, desc: CoreDesc): Module {
 
 			...desc.decoders.map(({ streamBytes }, i) => ({ signal: `instruction_streams_${i}`, width: streamBytes * 8 })),
 
-			// Decoder modules
+			// Create decoder modules
 			...decoders.map((module, i) => ({
 				instance: `decoder_${i}`,
 				module,
@@ -37,7 +52,20 @@ export function createCore(name: string, desc: CoreDesc): Module {
 					clk: 'clk',
 					rst: 'rst',
 
-					instruction: { slice: { index: `instruction_streams_${i}`, start: i }, start: 0, end: module.body.find((stmt): stmt is SignalDefStmt => 'signal' in stmt && stmt.signal === 'instruction')!.width },
+					instruction: { slice: `instruction_streams_${i}`, start: 0, end: module.body.find((stmt): stmt is SignalDefStmt => 'signal' in stmt && stmt.signal === 'instruction')!.width },
+				},
+			})),
+
+			// Create operational units
+			...desc.operations.map((operation, i) => ({
+				instance: `operation_${i}`,
+				module: {
+					name: `operation_${i}`,
+					body: operation.body,
+				},
+				ports: {
+					clk: 'clk',
+					rst: 'rst',
 				},
 			})),
 		],

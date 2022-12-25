@@ -1,6 +1,6 @@
 import { moduleToVerilog } from '../../src/hdl/Verilog'
 import { createCache } from '../../src/processor/Cache'
-import { createCore } from '../../src/processor/Core'
+import { createCore, getOperationArgs, OperationDesc } from '../../src/processor/Core'
 import { createDecoder, DecoderDesc } from '../../src/processor/Decoder'
 import { createDecoderTree, fillDecoderTree } from '../../src/processor/DecoderTree'
 import { rangeMap } from '../../src/Util'
@@ -51,13 +51,18 @@ describe('Processor', () => {
 
 	it('Can create core', () => {
 		const opCount = 16
-		const ops = rangeMap(opCount, (i) => i)
-		const units = rangeMap(opCount, () => ({ args: { a: 4, b: 4 } }))
+		const units: OperationDesc[] = rangeMap(opCount, () => ({
+			args: {
+				a: { type: 'register', encodedBits: 4 },
+				b: { type: 'register', encodedBits: 4 },
+			},
+			body: [],
+		}))
 
 		const test = createCore('test', {
 			decoders: rangeMap(2, () => ({
-				decoder: randomDecoderDesc(3, 4, 16, units),
-				streamBytes: 64,
+				decoder: randomDecoderDesc(3, 4, 16, units.map((u) => getOperationArgs(u))),
+				streamBytes: 128,
 			})),
 			operations: units,
 		})
