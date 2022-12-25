@@ -43,16 +43,23 @@ export function shiftInstruction(instruction: RExpr, prefixBits: number, downCou
 	return indexTable(totalShifts.map((shifts) => indexTable(shifts, downCount)), upCount)
 }
 
-export function createDecoder(name: string, desc: DecoderDesc, operations: OperationArgs[]): Module {
+export function createDecoderTreeDescriptions(desc: DecoderDesc, operations: OperationArgs[]): DecoderTreeDescFull[][] {
 	// Create the decoder trees for each lane
 	const trees = desc.groups.map((lanes) => lanes.map((ops) => fillDecoderTree({
 		argBits: ops.map((op) => {
-			const args = operations[op].args
-			assert(args !== undefined, `Operation ${op} does not exist`)
+			const operation = operations[op]
+			assert(operation !== undefined, `Operation ${op} does not exist`)
 			
-			return Object.values(args).reduce((sum, val) => sum + val, 0)
+			return Object.values(operation.args).reduce((sum, val) => sum + val, 0)
 		})
 	})))
+
+	return trees
+}
+
+export function createDecoder(name: string, desc: DecoderDesc, operations: OperationArgs[]): Module {
+	// Create the decoder trees for each lane
+	const trees = createDecoderTreeDescriptions(desc, operations)
 
 	// Get lengths of each lane/group/total
 	const laneLengths = trees.map((lanes) => lanes.map((tree) => getInstructionBits(tree)))
@@ -107,6 +114,9 @@ export function createDecoder(name: string, desc: DecoderDesc, operations: Opera
 					instance: `decoder_${i}_${j}`,
 					module: createDecoderTree(`tree_${i}_${j}`, tree),
 					ports: {
+						clk: 'clk',
+						rst: 'rst',
+						
 						instruction: `group_input_${i}`,
 						opcode: `opcode_${i}_${j}`,
 						args: `args_${i}_${j}`,

@@ -37,7 +37,7 @@ describe('Processor', () => {
 
 		const test = createDecoder('test', {
 			groups: [
-				[ops],
+				[ops, ops],
 				[ops, ops],
 				[ops, ops, ops],
 				[ops, ops, ops, ops],
