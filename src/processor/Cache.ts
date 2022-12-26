@@ -19,9 +19,9 @@ export function createCachePorts(desc: CacheDesc): Stmt[] {
 			{ signal: `read_${portIndex}`, width: 1, direction: 'input' },
 			{ signal: `read_${portIndex}_address`, width: desc.addressBits, direction: 'input' },
 
-			{ signal: `read_${portIndex}_complete`, width: 1, direction: 'output' },
-			{ signal: `read_${portIndex}_hit`, width: 1, direction: 'output' },
-			{ signal: `read_${portIndex}_data`, width: desc.dataBits, direction: 'output' },
+			{ signal: `read_${portIndex}_complete`, width: 1, direction: 'output', type: 'tri' },
+			{ signal: `read_${portIndex}_hit`, width: 1, direction: 'output', type: 'tri' },
+			{ signal: `read_${portIndex}_data`, width: desc.dataBits, direction: 'output', type: 'tri' },
 		]),
 
 		// Write ports
@@ -31,11 +31,11 @@ export function createCachePorts(desc: CacheDesc): Stmt[] {
 			{ signal: `write_${portIndex}_address`, width: desc.addressBits, direction: tristate ? 'inout' : 'input', type: tristate ? 'tri' : 'wire' },
 			{ signal: `write_${portIndex}_data`, width: desc.dataBits, direction: tristate ? 'inout' : 'input', type: tristate ? 'tri' : 'wire' },
 
-			{ signal: `write_${portIndex}_complete`, width: 1, direction: 'output' },
-			{ signal: `write_${portIndex}_evict`, width: 1, direction: 'output' },
+			{ signal: `write_${portIndex}_complete`, width: 1, direction: 'output', type: 'tri' },
+			{ signal: `write_${portIndex}_evict`, width: 1, direction: 'output', type: 'tri' },
 			...(tristate ? [] : [
-				{ signal: `write_${portIndex}_evict_address`, width: desc.addressBits, direction: 'output' },
-				{ signal: `write_${portIndex}_evict_data`, width: desc.dataBits, direction: 'output' },
+				{ signal: `write_${portIndex}_evict_address`, width: desc.addressBits, direction: 'output', type: 'tri' },
+				{ signal: `write_${portIndex}_evict_data`, width: desc.dataBits, direction: 'output', type: 'tri' },
 			]) as Stmt[],
 		]),
 	]
@@ -182,13 +182,20 @@ export function createCache(name: string, desc: CacheDesc): Module {
 
 					// Cycle 2, generate outputs and update memory
 					...rangeFlatMap<Stmt>(desc.readPorts, (portIndex) => [
-						{ assign: `read_${portIndex}_complete`, value: { index: 'read_in_progress', start: portIndex } },
-						{ assign: `read_${portIndex}_hit`, value: { index: 'read_any_matches', start: portIndex } },
-						{ assign: `read_${portIndex}_data`, value: { index: { index: 'read_buf_data', start: portIndex }, start: { index: 'read_selected_ways', start: portIndex } } },
+						{ assign: `read_${portIndex}_complete`, value: { ternary: { index: 'read_in_progress', start: portIndex }, zero: { value: 'z', width: 1 }, one: 1 } },
+						{ assign: `read_${portIndex}_hit`, value: { ternary: { index: 'read_any_matches', start: portIndex }, zero: { value: 'z', width: 1 }, one: 1 } },
+						{
+							assign: `read_${portIndex}_data`,
+							value: {
+								ternary: { index: 'read_any_matches', start: portIndex },
+								zero: { value: 'z', width: desc.dataBits },
+								one: { index: { index: 'read_buf_data', start: portIndex }, start: { index: 'read_selected_ways', start: portIndex } }
+							},
+						},
 					]),
 					...desc.writePorts.flatMap<Stmt>((tristate, portIndex) => [
-						{ assign: `write_${portIndex}_complete`, value: { index: 'write_in_progress', start: portIndex } },
-						{ assign: `write_${portIndex}_evict`, value: { index: 'write_any_matches', start: portIndex } },
+						{ assign: `write_${portIndex}_complete`, value: { ternary: { index: 'write_in_progress', start: portIndex }, zero: { value: 'z', width: 1}, one: 1 } },
+						{ assign: `write_${portIndex}_evict`, value: { ternary: { index: 'write_any_matches', start: portIndex }, zero: { value: 'z', width: 1}, one: 1 } },
 						{
 							assign: tristate ? `write_${portIndex}_address` : `write_${portIndex}_evict_address`,
 							value: {
@@ -201,7 +208,11 @@ export function createCache(name: string, desc: CacheDesc): Module {
 						},
 						{
 							assign: tristate ? `write_${portIndex}_data` : `write_${portIndex}_evict_data`,
-							value: { index: { index: 'write_buf_data', start: portIndex }, start: { index: 'write_selected_ways', start: portIndex } }
+							value: {
+								ternary: { index: 'write_any_matches', start: portIndex },
+								zero: { value: 'z', width: desc.dataBits },
+								one: { index: { index: 'write_buf_data', start: portIndex }, start: { index: 'write_selected_ways', start: portIndex } }
+							},
 						},
 
 						// Update memory

@@ -1,5 +1,6 @@
 import { moduleToVerilog } from '../../src/hdl/Verilog'
 import { createCache } from '../../src/processor/Cache'
+import { createCacheController } from '../../src/processor/CacheController'
 import { createCore, getOperationArgs, OperationDesc } from '../../src/processor/Core'
 import { createDecoder, DecoderDesc } from '../../src/processor/Decoder'
 import { createDecoderTree, fillDecoderTree } from '../../src/processor/DecoderTree'
@@ -14,6 +15,21 @@ describe('Processor', () => {
 			selectorBits: 7,
 			dataBits: 8 * 64,
 			ways: 4,
+			readPorts: 2,
+			writePorts: [true, false],
+		})
+
+		const code = moduleToVerilog(test)
+		console.log(code)
+	})
+
+	it.only('Can create cache controller', () => {
+		const test = createCacheController('test', {
+			shiftBits: 6,
+			selectorBits: 7,
+			bankBits: [6],
+			upperBits: 45,
+			ways: 8,
 			readPorts: 2,
 			writePorts: [true, false],
 		})

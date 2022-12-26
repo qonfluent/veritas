@@ -11,7 +11,7 @@ export type SliceLExpr = { slice: LExpr, start: RExpr, end: RExpr }
 export type ConcatLExpr = { concat: LExpr[] }
 export type LExpr = string | IndexLExpr | SliceLExpr | ConcatLExpr
 
-export type ConstExpr = number | bigint | { value: number | bigint, width: number }
+export type ConstExpr = number | bigint | { value: number | bigint | string, width: number }
 export type UnaryExpr = { unary: UnaryOp, value: RExpr }
 export type BinaryExpr = { binary: BinaryOp, left: RExpr, right: RExpr }
 export type TernaryExpr = { ternary: RExpr, one: RExpr, zero: RExpr }
@@ -35,6 +35,7 @@ export type SignalDefStmt = {
 export type ModuleInstanceStmt = {
 	instance: string
 	module: Module
+	count?: number
 	ports: Record<string, RExpr>
 }
 export type Stmt = AssignStmt | IfStmt | ForStmt | CaseStmt | SignalDefStmt | AlwaysStmt | ModuleInstanceStmt
@@ -134,7 +135,8 @@ export function statementToVerilog(stmt: Stmt, tabs = 1, blocking = true): strin
 		return `${tabsStr}always @(${stmt.edge ?? 'posedge'} ${stmt.always}) begin\n${body}\n${tabsStr}end`
 	} else if ('instance' in stmt) {
 		const ports = Object.entries(stmt.ports).map(([port, expr]) => `${tabsStr}\t.${port}(${exprToVerilog(expr)})`).join(',\n')
-		return `${tabsStr}${stmt.module.name} ${stmt.instance} (${ports ? '\n' + ports + '\n' : ''}${tabsStr});`
+		const countStr = stmt.count ? `[${stmt.count - 1}:0] ` : ''
+		return `${tabsStr}${stmt.module.name} ${stmt.instance} ${countStr}(${ports ? '\n' + ports + '\n' : ''}${tabsStr});`
 	}
 
 	throw new Error(`Unrecognized statement: ${JSON.stringify(stmt)}`)
@@ -147,6 +149,8 @@ export enum VarType {
 }
 
 export function getExprVars(type: VarType, expr: RExpr): string[] {
+	assert(expr !== undefined)
+
 	if (typeof expr === 'number' || typeof expr === 'bigint') {
 		return []
 	} else if (typeof expr === 'string') {
@@ -157,17 +161,17 @@ export function getExprVars(type: VarType, expr: RExpr): string[] {
 		return []
 	} else if ('value' in expr && 'width' in expr) {
 		return []
-	} else if ('index' in expr) {
+	} else if ('index' in expr && 'start' in expr) {
 		return getExprVars(type, expr.index).concat(getExprVars(type, expr.start))
-	} else if ('slice' in expr) {
+	} else if ('slice' in expr && 'start' in expr && 'end' in expr) {
 		return getExprVars(type, expr.slice).concat(getExprVars(type, expr.start), getExprVars(type, expr.end))
 	} else if ('concat' in expr) {
 		return expr.concat.flatMap((expr) => getExprVars(type, expr))
-	} else if ('unary' in expr) {
+	} else if ('unary' in expr && 'value' in expr) {
 		return getExprVars(type, expr.value)
-	} else if ('binary' in expr) {
+	} else if ('binary' in expr && 'left' in expr && 'right' in expr) {
 		return getExprVars(type, expr.left).concat(getExprVars(type, expr.right))
-	} else if ('ternary' in expr) {
+	} else if ('ternary' in expr && 'zero' in expr && 'one' in expr) {
 		return getExprVars(type, expr.ternary).concat(getExprVars(type, expr.zero)).concat(getExprVars(type, expr.one))
 	}
 
