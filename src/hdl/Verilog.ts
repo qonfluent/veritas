@@ -3,11 +3,11 @@ import assert from "assert"
 export type SignalDirection = 'input' | 'output' | 'inout'
 export type SignalType = 'wire' | 'reg' | 'tri' | 'tri0' | 'tri1' | 'triand' | 'trior' | 'wand' | 'wor' | 'supply0' | 'supply1' | 'integer' | 'genvar'
 export type UnaryOp = '!' | '~' | '-' | '&' | '|' | '^' | '~&' | '~|' | '~^'
-export type BinaryOp = '==' | '!=' | '===' | '!==' | '<' | '<=' | '>' | '>=' | '&&' | '||' | '<<' | '>>' | '<<<' | '>>>' | '+' | '-' | '&' | '|' | '^' | '~&' | '~|' | '~^'
+export type BinaryOp = '==' | '!=' | '===' | '!==' | '<' | '<=' | '>' | '>=' | '&&' | '||' | '<<' | '>>' | '<<<' | '>>>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~&' | '~|' | '~^'
 
 export type VarExpr = string
 export type IndexLExpr = { index: LExpr, start: RExpr }
-export type SliceLExpr = { slice: LExpr, start: RExpr, end: RExpr }
+export type SliceLExpr = { slice: LExpr, start: RExpr, end: RExpr } | { slice: LExpr, start: RExpr, endOffset: number }
 export type ConcatLExpr = { concat: LExpr[] }
 export type LExpr = string | IndexLExpr | SliceLExpr | ConcatLExpr
 
@@ -16,7 +16,7 @@ export type UnaryExpr = { unary: UnaryOp, value: RExpr }
 export type BinaryExpr = { binary: BinaryOp, left: RExpr, right: RExpr }
 export type TernaryExpr = { ternary: RExpr, one: RExpr, zero: RExpr }
 export type IndexRExpr = { index: RExpr, start: RExpr }
-export type SliceRExpr = { slice: RExpr, start: RExpr, end: RExpr }
+export type SliceRExpr = { slice: RExpr, start: RExpr, end: RExpr } | { slice: RExpr, start: RExpr, endOffset: number }
 export type ConcaRLExpr = { concat: RExpr[] }
 export type RExpr = LExpr | ConstExpr | UnaryExpr | BinaryExpr | TernaryExpr | IndexRExpr | SliceRExpr | ConcaRLExpr
 
@@ -71,10 +71,12 @@ export function exprToVerilog(expr: RExpr, parens = false): string {
 		return expr.toString()
 	} else if ('value' in expr && 'width' in expr) {
 		return `${expr.width}'d${expr.value.toString()}`
-	} else if ('index' in expr) {
+	} else if ('index' in expr && 'start' in expr) {
 		return `${exprToVerilog(expr.index)}[${exprToVerilog(expr.start)}]`
-	} else if ('slice' in expr) {
+	} else if ('slice' in expr && 'start' in expr && 'end' in expr) {
 		return `${exprToVerilog(expr.slice)}[${exprToVerilog(expr.end)}:${exprToVerilog(expr.start)}]`
+	} else if ('slice' in expr && 'start' in expr && 'endOffset' in expr) {
+		return `${exprToVerilog(expr.slice)}[${exprToVerilog(expr.start)}+:${expr.endOffset}]`
 	} else if ('concat' in expr) {
 		return `{ ${expr.concat.map((expr) => exprToVerilog(expr)).join(', ') }}`
 	} else if ('unary' in expr) {
@@ -192,7 +194,16 @@ export function getStmtVars(type: VarType, stmt: Stmt): string[] {
 			}
 		}
 	} else if ('if' in stmt) {
-		return getExprVars(type, stmt.if).concat(stmt.then.flatMap((stmt) => getStmtVars(type, stmt))).concat(stmt.else?.flatMap((stmt) => getStmtVars(type, stmt)) ?? [])
+		const rest = stmt.then.flatMap((stmt) => getStmtVars(type, stmt)).concat(stmt.else?.flatMap((stmt) => getStmtVars(type, stmt)) ?? [])
+		switch (type) {
+			case VarType.RVar: {
+				return getExprVars(type, stmt.if).concat(rest)
+			}
+			case VarType.LVar:
+			case VarType.ForVar: {
+				return rest
+			}
+		}
 	} else if ('for' in stmt) {
 		switch (type) {
 			case VarType.LVar:
@@ -240,11 +251,11 @@ export function normalizeModule(module: Module): Module {
 	const alwaysBlocks = module.body.filter((stmt): stmt is AlwaysStmt => 'always' in stmt)
 
 	// Collect all LVars from the always blocks
-	const regNames = alwaysBlocks.flatMap((block) => getStmtVars(VarType.LVar, block))
+	const regNames = new Set(alwaysBlocks.flatMap((block) => getStmtVars(VarType.LVar, block)))
 
 	// Fix up definitions of registers
 	const fixedBody = module.body.flatMap((stmt): Stmt[] => {
-		if ('signal' in stmt && regNames.includes(stmt.signal) && (stmt.type === undefined || stmt.type === 'wire')) {
+		if ('signal' in stmt && regNames.has(stmt.signal) && (stmt.type === undefined || stmt.type === 'wire')) {
 			return [{
 				...stmt,
 				type: 'reg',
