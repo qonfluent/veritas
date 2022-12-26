@@ -50,22 +50,35 @@ export function createCache(name: string, desc: CacheDesc): Module {
 		name,
 		body: [
 			// Clock and reset
-			{ signal: 'clk', width: 1, direction: 'input', type: 'wire' },
-			{ signal: 'rst', width: 1, direction: 'input', type: 'wire' },
+			{ signal: 'clk', width: 1, direction: 'input' },
+			{ signal: 'rst', width: 1, direction: 'input' },
 
 			// Create IO ports
 			...createCachePorts(desc),
+
+			// IO tristate buffers
+			...rangeFlatMap<Stmt>(desc.readPorts, (portIndex) => [
+				{ signal: `read_${portIndex}_complete_buf`, width: 1 },
+				{ signal: `read_${portIndex}_hit_buf`, width: 1 },
+				{ signal: `read_${portIndex}_data_buf`, width: desc.dataBits },
+			]),
+			...desc.writePorts.flatMap<Stmt>((_, portIndex) => [
+				{ signal: `write_${portIndex}_complete_buf`, width: 1 },
+				{ signal: `write_${portIndex}_evict_buf`, width: 1 },
+				{ signal: `write_${portIndex}_evict_address_buf`, width: desc.addressBits },
+				{ signal: `write_${portIndex}_evict_data_buf`, width: desc.dataBits },
+			]),
 
 			// Wires
 			{ signal: 'read_selectors', width: desc.selectorBits, depth: [desc.readPorts] },
 			{ signal: 'read_matches', width: desc.ways, depth: [desc.readPorts] },
 			{ signal: 'read_any_matches', width: desc.readPorts },
-			{ signal: 'read_selected_ways', width: waysBits, depth: [desc.readPorts], type: 'wor' },
+			{ signal: 'read_selected_ways', width: waysBits, depth: [desc.readPorts], type: 'tri' },
 
 			{ signal: 'write_selectors', width: desc.selectorBits, depth: [desc.writePorts.length] },
 			{ signal: 'write_matches', width: desc.ways, depth: [desc.writePorts.length] },
 			{ signal: 'write_any_matches', width: desc.writePorts.length },
-			{ signal: 'write_selected_ways', width: waysBits, depth: [desc.writePorts.length], type: 'wor' },
+			{ signal: 'write_selected_ways', width: waysBits, depth: [desc.writePorts.length], type: 'tri' },
 			{ signal: 'write_all_valid', width: desc.writePorts.length },
 
 			// Input registers
@@ -119,7 +132,7 @@ export function createCache(name: string, desc: CacheDesc): Module {
 					},
 					{
 						assign: { index: 'read_selected_ways', start: 'gv_j' },
-						value: { ternary: { index: { index: 'read_matches', start: 'gv_j' }, start: 'gv_i' }, one: 'gv_i', zero: 0 },
+						value: { ternary: { index: { index: 'read_matches', start: 'gv_j' }, start: 'gv_i' }, one: 'gv_i', zero: { value: 'z', width: waysBits } },
 					}
 				] },
 
@@ -137,6 +150,14 @@ export function createCache(name: string, desc: CacheDesc): Module {
 							right: { index: { index: 'write_buf_valid', start: 'gv_i'}, start: 'gv_j' },
 						}
 					},
+					{
+						assign: { index: 'write_selected_ways', start: 'gv_j' },
+						value: {
+							ternary: { index: 'write_any_matches', start: 'gv_j' },
+							zero: 0,
+							one: { ternary: { index: { index: 'write_matches', start: 'gv_j' }, start: 'gv_i' }, one: 'gv_i', zero: { value: 'z', width: waysBits } },
+						},
+					}
 				] },
 			] },
 
@@ -148,6 +169,24 @@ export function createCache(name: string, desc: CacheDesc): Module {
 				{ assign: { index: 'write_any_matches', start: 'gv_i' }, value: { unary: '|', value: { index: 'write_matches', start: 'gv_i' } } },
 				{ assign: { index: 'write_all_valid', start: 'gv_i' }, value: { unary: '&', value: { index: 'write_matches', start: 'gv_i' } } },
 			] },
+
+			// Generate output tristate buffers
+			...rangeFlatMap<Stmt>(desc.readPorts, (portIndex) => [
+				{ assign: `read_${portIndex}_complete`, value: { ternary: `read_${portIndex}_complete_buf`, zero: { value: 'z', width: 1 }, one: 1 } },
+				{ assign: `read_${portIndex}_hit`, value: { ternary: `read_${portIndex}_hit_buf`, zero: { value: 'z', width: 1 }, one: 1 } },
+				{ assign: `read_${portIndex}_data`, value: { ternary: `read_${portIndex}_complete_buf`, zero: { value: 'z', width: desc.dataBits }, one: `read_${portIndex}_data_buf` } },
+			]),
+			...desc.writePorts.flatMap((tristate, portIndex) => [
+				{ assign: `write_${portIndex}_complete`, value: { ternary: `write_${portIndex}_complete_buf`, zero: { value: 'z', width: 1 }, one: 1 } },
+				{ assign: `write_${portIndex}_evict`, value: { ternary: `write_${portIndex}_evict_buf`, zero: { value: 'z', width: 1 }, one: 1 } },
+				...(tristate ? [
+					{ assign: `write_${portIndex}_address`, value: { ternary: `write_${portIndex}_complete_buf`, zero: { value: 'z', width: desc.addressBits }, one: `write_${portIndex}_evict_address_buf` } },
+					{ assign: `write_${portIndex}_data`, value: { ternary: `write_${portIndex}_complete_buf`, zero: { value: 'z', width: desc.dataBits }, one: `write_${portIndex}_evict_data_buf` } },
+				] : [
+					{ assign: `write_${portIndex}_evict_address`, value: `write_${portIndex}_evict_address_buf` },
+					{ assign: `write_${portIndex}_evict_data`, value: `write_${portIndex}_evict_data_buf` },
+				]),
+			]),
 
 			// Step
 			{ always: 'clk', body: [
@@ -182,51 +221,50 @@ export function createCache(name: string, desc: CacheDesc): Module {
 
 					// Cycle 2, generate outputs and update memory
 					...rangeFlatMap<Stmt>(desc.readPorts, (portIndex) => [
-						{ assign: `read_${portIndex}_complete`, value: { ternary: { index: 'read_in_progress', start: portIndex }, zero: { value: 'z', width: 1 }, one: 1 } },
-						{ assign: `read_${portIndex}_hit`, value: { ternary: { index: 'read_any_matches', start: portIndex }, zero: { value: 'z', width: 1 }, one: 1 } },
+						{ assign: `read_${portIndex}_complete_buf`, value: { index: 'read_in_progress', start: portIndex } },
+						{ assign: `read_${portIndex}_hit_buf`, value: { index: 'read_any_matches', start: portIndex } },
 						{
-							assign: `read_${portIndex}_data`,
-							value: {
-								ternary: { index: 'read_any_matches', start: portIndex },
-								zero: { value: 'z', width: desc.dataBits },
-								one: { index: { index: 'read_buf_data', start: portIndex }, start: { index: 'read_selected_ways', start: portIndex } }
-							},
+							assign: `read_${portIndex}_data_buf`,
+							value: { index: { index: 'read_buf_data', start: portIndex }, start: { index: 'read_selected_ways', start: portIndex } },
 						},
 					]),
-					...desc.writePorts.flatMap<Stmt>((tristate, portIndex) => [
-						{ assign: `write_${portIndex}_complete`, value: { ternary: { index: 'write_in_progress', start: portIndex }, zero: { value: 'z', width: 1}, one: 1 } },
-						{ assign: `write_${portIndex}_evict`, value: { ternary: { index: 'write_any_matches', start: portIndex }, zero: { value: 'z', width: 1}, one: 1 } },
-						{
-							assign: tristate ? `write_${portIndex}_address` : `write_${portIndex}_evict_address`,
-							value: {
-								concat: [
-									{ index: { index: 'write_buf_tag', start: portIndex }, start: { index: 'write_selected_ways', start: portIndex } },
-									{ slice: { index: 'write_addresses', start: portIndex }, start: desc.shiftBits, end: desc.shiftBits + desc.selectorBits - 1 },
-									{ value: 0, width: desc.shiftBits },
-								]
-							}
-						},
-						{
-							assign: tristate ? `write_${portIndex}_data` : `write_${portIndex}_evict_data`,
-							value: {
-								ternary: { index: 'write_any_matches', start: portIndex },
-								zero: { value: 'z', width: desc.dataBits },
-								one: { index: { index: 'write_buf_data', start: portIndex }, start: { index: 'write_selected_ways', start: portIndex } }
-							},
-						},
+					...desc.writePorts.flatMap<Stmt>((_, portIndex) => {
+						const selector = { slice: { index: 'write_addresses', start: portIndex }, start: desc.shiftBits, end: desc.shiftBits + desc.selectorBits - 1 }
 
-						// Update memory
-						{ if: { index: 'write_in_progress', start: portIndex }, then: [
-							{ assign: { index: 'valids', start: { index: 'write_selected_ways', start: portIndex } }, value: { index: 'write_valids', start: portIndex } },
-							{ if: { index: 'write_valids', start: portIndex }, then: [
-								{
-									assign: { index: 'tags', start: { index: 'write_selected_ways', start: portIndex } },
-									value: { slice: { index: 'write_addresses', start: portIndex }, start: desc.shiftBits + desc.selectorBits, end: desc.addressBits - 1 }
-								},
-								{ assign: { index: 'data', start: { index: 'write_selected_ways', start: portIndex } }, value: { index: 'write_data', start: portIndex } },
+						return [
+							{ assign: `write_${portIndex}_complete_buf`, value: { index: 'write_in_progress', start: portIndex } },
+							{ assign: `write_${portIndex}_evict_buf`, value: { index: 'write_any_matches', start: portIndex } },
+							{
+								assign: `write_${portIndex}_evict_address_buf`,
+								value: {
+									concat: [
+										{ index: { index: 'write_buf_tag', start: portIndex }, start: { index: 'write_selected_ways', start: portIndex } },
+										selector,
+										{ value: 0, width: desc.shiftBits },
+									]
+								}
+							},
+							{
+								assign: `write_${portIndex}_evict_data_buf`,
+								value: { index: { index: 'write_buf_data', start: portIndex }, start: { index: 'write_selected_ways', start: portIndex } },
+							},
+
+							// Update memory
+							{ if: { index: 'write_in_progress', start: portIndex }, then: [
+								{ assign: { index: 'valids', start: { index: 'write_selected_ways', start: portIndex } }, value: { index: 'write_valids', start: portIndex } },
+								{ if: { index: 'write_valids', start: portIndex }, then: [
+									{
+										assign: { index: { index: 'tags', start: { index: 'write_selected_ways', start: portIndex } }, start: selector },
+										value: { slice: { index: 'write_addresses', start: portIndex }, start: desc.shiftBits + desc.selectorBits, end: desc.addressBits - 1 }
+									},
+									{
+										assign: { index: { index: 'data', start: { index: 'write_selected_ways', start: portIndex } }, start: selector },
+										value: { index: 'write_data', start: portIndex },
+									},
+								] },
 							] },
-						] },
-					]),
+						]
+					}),
 				] },
 			] },
 		],

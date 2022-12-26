@@ -30,11 +30,11 @@ describe('Processor', () => {
 			bankBits: [6],
 			upperBits: 45,
 			ways: 8,
-			readPorts: 2,
-			writePorts: [true, false],
+			readPorts: [{ retireStations: 2 }, { retireStations: 2 }],
+			writePorts: [{ tristate: true }, { tristate: false }],
 		})
 
-		const code = moduleToVerilog(test)
+		const code = moduleToVerilog(test, true)
 		console.log(code)
 	})
 

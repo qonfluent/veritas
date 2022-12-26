@@ -1,4 +1,3 @@
-import assert from 'assert'
 import { Module, RExpr, Stmt } from '../hdl/Verilog'
 import { OperationArgs } from './Decoder'
 
@@ -61,7 +60,6 @@ export function getOpcodeBits(tree: DecoderTreeDescFull): number {
 }
 
 export function getArgsBits(tree: DecoderTreeDescFull): number {
-
 	return getArgBits(treeRecurse((_, argBits) => argBits, (a, b) => ({ field: Math.max(getArgBits(a), getArgBits(b)) }), tree))
 }
 
