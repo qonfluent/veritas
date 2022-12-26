@@ -1,0 +1,26 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"experimentalDecorators": true,
+		"alwaysStrict": true,
+		"allowJs": true,
+		"esModuleInterop": true,
+		"moduleResolution": "node",
+		"noImplicitAny": false,
+		"forceConsistentCasingInFileNames": true,
+		"noUnusedLocals": false,
+		"noUnusedParameters": true,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"sourceMap": true,
+		"strict": true,
+		"outDir": "./build",
+	},
+	"exclude": [
+		"node_modules/**"
+	],
+	"include": [
+		"./src",
+		"./test"
+	]
+}
