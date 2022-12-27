@@ -123,7 +123,7 @@ export function createCacheController(name: string, desc: CacheControllerDesc): 
 			{ signal: 'read_address_forward', width: fullAddressWidth, depth: [desc.readPorts.length, desc.bankBits.length] },
 			{ signal: 'write_address_forward', width: fullAddressWidth, depth: [desc.writePorts.length, desc.bankBits.length] },
 
-			// Create bank select logic
+			// Create address forward logic
 			{ always: 'clk', body: [
 				{ if: 'rst', then: [
 				], else: [
@@ -133,6 +133,10 @@ export function createCacheController(name: string, desc: CacheControllerDesc): 
 							{
 								assign: { index: { index: 'read_address_forward', start: portIndex }, start: 0 },
 								value: `read_address_${portIndex}`,
+							},
+							{
+								assign: { index: { index: 'write_address_forward', start: portIndex }, start: 0 },
+								value: `write_address_${portIndex}`,
 							}
 						]),
 					] : []),

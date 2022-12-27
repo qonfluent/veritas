@@ -2,14 +2,10 @@ import assert from 'assert'
 import { Module, SignalDefStmt, Stmt } from '../hdl/Verilog'
 import { createDecoder, DecoderDesc, OperationArgs } from './Decoder'
 
-export type ArgType = 'immediate' | 'register'
-
-export type ArgDesc = {
-	type: ArgType
-	encodedBits: number
-}
+export type ArgDesc = { immediate: number } | { register: number }
 
 export type OperationDesc = {
+	opcode: string
 	args: Record<string, ArgDesc>
 	body: Stmt[]
 }
@@ -24,7 +20,7 @@ export type CoreDesc = {
 }
 
 export function getOperationArgs(operation: OperationDesc): OperationArgs {
-	return { args: Object.fromEntries(Object.entries(operation.args).map(([name, arg]) => [name, arg.encodedBits])) }
+	return { args: Object.fromEntries(Object.entries(operation.args).map(([name, arg]) => [name, 'immediate' in arg ? arg.immediate : arg.register])) }
 }
 
 export function createCore(name: string, desc: CoreDesc): Module {
