@@ -68,7 +68,7 @@ export class InstructionBytesCodec implements Codec<Instruction, Uint8Array> {
 					const argDesc = opDesc.args[argName]
 
 					if ('immediateBits' in argDesc) {
-						assert(argValue >= 0 && argValue < (1 << argDesc.immediateBits), `Invalid immediate value ${argValue} for argument ${argName} in opcode ${opDesc.opcode}`)
+						assert(argValue >= 0 && argValue < Math.pow(2, argDesc.immediateBits), `Invalid immediate value ${argValue} for argument ${argName} in opcode ${opDesc.opcode}`)
 					} else if ('registerFile' in argDesc) {
 						assert(argValue >= 0 && argValue < this._registerFiles[argDesc.registerFile].count, `Invalid register value ${argValue} for argument ${argName} in opcode ${opDesc.opcode}`)
 					} else if ('cache' in argDesc) {
@@ -256,8 +256,8 @@ export class InstructionTextCodec implements Codec<Instruction, string> {
 					if ('immediateBits' in argDesc) {
 						// Validate value
 						const value = Number(arg)
-						if (value >= 0 && value < (1 << argDesc.immediateBits)) {
-							throw new Error(`Invalid immediate arg: ${arg}`)
+						if (!(value >= 0 && value < Math.pow(2, argDesc.immediateBits))) {
+							throw new Error(`Invalid immediate value ${arg} tried to pack into ${argDesc.immediateBits} bits`)
 						}
 
 						return [[argName, value]]
