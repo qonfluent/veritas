@@ -1,4 +1,4 @@
-import { Module } from "../hdl/Module"
+import { Module } from '../hdl/Module'
 
 // Common types
 export type Description = string

@@ -1,4 +1,4 @@
-import { InstructionTextCodec } from "../../src/assembler/InstructionCodec"
+import { InstructionBytesCodec, InstructionTextCodec } from "../../src/assembler/InstructionCodec"
 
 describe('Instruction codec', () => {
 	it('should encode and decode instructions', () => {
@@ -32,7 +32,11 @@ describe('Instruction codec', () => {
 			{
 				opcode: 'mul',
 				args: binaryArgs,
-			}
+			},
+			{
+				opcode: 'div',
+				args: binaryArgs,
+			},
 		]
 
 		const registerFiles = {
@@ -42,8 +46,6 @@ describe('Instruction codec', () => {
 				widthBits: 64,
 			}
 		}
-
-		const codec = new InstructionTextCodec(desc, ops, registerFiles)
 
 		const instruction = {
 			groups: [
@@ -66,11 +68,21 @@ describe('Instruction codec', () => {
 			],
 		}
 
-		const encoded = codec.encode(instruction)
-		const decoded = codec.decode(encoded)
+		{
+			const codec = new InstructionTextCodec(desc, ops, registerFiles)
+			const encoded = codec.encode(instruction)
+			const decoded = codec.decode(encoded)
 
-		expect(decoded).toEqual(instruction)
+			expect(decoded).toEqual(instruction)
+		}
+		
+		{
+			const codec = new InstructionBytesCodec(desc, ops, registerFiles)
+			const encoded = codec.encode(instruction)
+			const decoded = codec.decode(encoded)
 
-		console.log(encoded)
+			console.log(encoded)
+			expect(decoded).toEqual({ ...instruction, shiftBytes: 2 })
+		}
 	})
 })

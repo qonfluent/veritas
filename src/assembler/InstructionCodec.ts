@@ -1,19 +1,179 @@
-import { Instruction } from '../common/Assembly'
+import { BitstreamReader, BitstreamWriter, BufferedWritable } from '@astronautlabs/bitstream'
+import assert from 'assert'
+import { Instruction, Operation } from '../common/Assembly'
 import { Codec } from '../common/Codec'
-import { DecoderDesc, OperationDesc, RegisterFileDesc, RegisterFileName } from '../common/Processor'
+import { ArgDesc, DecoderDesc, OperationDesc, RegisterFileDesc, RegisterFileName } from '../common/Processor'
+import { clog2, rangeMap } from '../common/Util'
+import { createDecoderTree, DecoderQueueEntry, DecoderTree } from '../processor/DecoderTree'
 
 export class InstructionBytesCodec implements Codec<Instruction, Uint8Array> {
+	private readonly _trees: DecoderQueueEntry[][]
+	private readonly _shiftBits: number
+	private readonly _shiftOffset: number
+	private readonly _laneCountBits: number[]
+	private readonly _headerBits: number
+	
 	public constructor(
 		private readonly _desc: DecoderDesc,
 		private readonly _ops: OperationDesc[],
-	) {}
+		private readonly _registerFiles: Record<RegisterFileName, RegisterFileDesc>,
+	) {
+		this._trees = this._desc.groups.map((lanes) => lanes.map((ops) => {
+			const routedOps = ops.map((op) => {
+				if (!(op in _ops)) {
+					throw new Error(`Operation ${op} not found`)
+				}
 
-	public encode(_: Instruction): Uint8Array {
-		throw new Error('Not implemented')
+				return _ops[op]
+			})
+
+			return createDecoderTree(routedOps, this._registerFiles)
+		}))
+		
+		const minSizeBytes = Math.ceil(this._trees.reduce((sum, lanes) => sum + lanes[0].bits, 0) / 8)
+		const maxSizeBytes = Math.ceil(this._trees.reduce((sum, lanes) => sum + lanes.reduce((sum, entry) => sum + entry.bits, 0), 0) / 8)
+		const sizeDiff = maxSizeBytes - minSizeBytes
+
+		this._shiftOffset = minSizeBytes
+		this._shiftBits = clog2(sizeDiff)
+
+		this._laneCountBits = this._desc.groups.map((lanes) => clog2(lanes.length))
+		this._headerBits = this._shiftBits + this._laneCountBits.reduce((sum, bits) => sum + bits, 0)
 	}
 
-	public decode(_: Uint8Array): Instruction {
-		throw new Error('Not implemented')
+	public encodedBytes(instruction: Instruction): number {
+		const totalBits = this._headerBits + instruction.groups.reduce((sum, lanes, groupIndex) => {
+			return sum + lanes.reduce((sum, _, laneIndex) => {
+				return sum + this._trees[groupIndex][laneIndex].bits
+			}, 0)
+		}, 0)
+
+		return Math.ceil(totalBits / 8)
+	}
+
+	public encode(instruction: Instruction): Uint8Array {
+		// Validate instruction
+		assert(instruction.groups.length === this._desc.groups.length, `Expected ${this._desc.groups.length} groups, got ${instruction.groups.length}`)
+		instruction.groups.forEach((lanes, groupIndex) => {
+			assert(lanes.length >= 1, `Expected at least 1 lane, got ${lanes.length}`)
+			assert(lanes.length <= this._desc.groups[groupIndex].length, `Expected at most ${this._desc.groups[groupIndex].length} lanes, got ${lanes.length}`)
+
+			lanes.forEach((laneOp, laneIndex) => {
+				assert(laneOp.opcode >= 0 && laneOp.opcode < this._desc.groups[groupIndex][laneIndex].length, `Invalid opcode ${laneOp.opcode} for lane ${laneIndex} in group ${groupIndex}`)
+
+				const opIndex = this._desc.groups[groupIndex][laneIndex][laneOp.opcode]
+				const opDesc = this._ops[opIndex]
+
+				Object.entries(laneOp.args).forEach(([argName, argValue]) => {
+					const argDesc = opDesc.args[argName]
+
+					if ('immediateBits' in argDesc) {
+						assert(argValue >= 0 && argValue < (1 << argDesc.immediateBits), `Invalid immediate value ${argValue} for argument ${argName} in opcode ${opDesc.opcode}`)
+					} else if ('registerFile' in argDesc) {
+						assert(argValue >= 0 && argValue < this._registerFiles[argDesc.registerFile].count, `Invalid register value ${argValue} for argument ${argName} in opcode ${opDesc.opcode}`)
+					} else if ('cache' in argDesc) {
+						// Nothing to do here
+					} else {
+						throw new Error(`Unknown arg type: ${JSON.stringify(argDesc)}`)
+					}
+				})
+			})
+		})
+
+		// Create writer
+		const buffer = new BufferedWritable()
+		const writer = new BitstreamWriter(buffer)
+
+		// Write header
+		writer.write(this._shiftBits, this.encodedBytes(instruction) - this._shiftOffset)
+		instruction.groups.forEach((lanes, groupIndex) => {
+			writer.write(this._laneCountBits[groupIndex], lanes.length - 1)
+		})
+
+		// Write operations
+		instruction.groups.forEach((lanes, groupIndex) => {
+			lanes.forEach((laneOp, laneIndex) => {
+				const tree = this._trees[groupIndex][laneIndex].tree
+				const opcodeData = this.encodeOpcode(tree, laneOp.opcode)
+
+				if (opcodeData === undefined) {
+					throw new Error(`Opcode ${laneOp.opcode} not found in tree`)
+				}
+
+				const [opcodeWidth, opcodeValue] = opcodeData
+				writer.write(opcodeWidth, opcodeValue)
+
+				const opIndex = this._desc.groups[groupIndex][laneIndex][laneOp.opcode]
+				const opDesc = this._ops[opIndex]
+
+				Object.entries(laneOp.args).forEach(([argName, argValue]) => {
+					const argDesc = opDesc.args[argName]
+
+					if ('immediateBits' in argDesc) {
+						writer.write(argDesc.immediateBits, argValue)
+					} else if ('registerFile' in argDesc) {
+						writer.write(clog2(this._registerFiles[argDesc.registerFile].count), argValue)
+					} else if ('cache' in argDesc) {
+						throw new Error(`Cache arguments should not be encoded: ${JSON.stringify(argDesc)}`)
+					} else {
+						throw new Error(`Unknown arg type: ${JSON.stringify(argDesc)}`)
+					}
+				})
+			})
+		})
+
+		// Return buffer
+		writer.end()
+		return buffer.buffer
+	}
+
+	public decode(data: Uint8Array): Instruction {
+		const reader = new BitstreamReader()
+		reader.addBuffer(data)
+
+		// Read header
+		const shiftBytes = reader.readSync(this._shiftBits) + this._shiftOffset
+		const laneCounts = this._laneCountBits.map((bits) => reader.readSync(bits) + 1)
+
+		// Read operations
+		const groups = laneCounts.map((laneCount, groupIndex) => {
+			return rangeMap(laneCount, (laneIndex) => {
+				const tree = this._trees[groupIndex][laneIndex].tree
+				const [opcode, args] = this.decodeOpcode(tree, reader)
+
+				const resultArgs = Object.entries(args).flatMap(([argName, argDesc]) => {
+					if ('immediateBits' in argDesc) {
+						return [[argName, reader.readSync(argDesc.immediateBits)]]
+					} else if ('registerFile' in argDesc) {
+						return [[argName, reader.readSync(clog2(this._registerFiles[argDesc.registerFile].count))]]
+					} else if ('cache' in argDesc) {
+						return []
+					} else {
+						throw new Error(`Unknown arg type: ${JSON.stringify(argDesc)}`)
+					}
+				})
+
+				return { opcode, args: Object.fromEntries(resultArgs) }
+			})
+		})
+
+		return { groups, shiftBytes }
+	}
+
+	private encodeOpcode(tree: DecoderTree, opcode: number, width = 0, value = 0): [width: number, value: number] | undefined {
+		if ('opcode' in tree) {
+			return opcode === tree.opcode ? [width, value] : undefined
+		}
+
+		return this.encodeOpcode(tree.zero, opcode, width + 1, value << 1) ?? this.encodeOpcode(tree.one, opcode, width + 1, (value << 1) | 1)
+	}
+
+	private decodeOpcode(tree: DecoderTree, reader: BitstreamReader): [number, Record<string, ArgDesc>] {
+		if ('opcode' in tree) {
+			return [tree.opcode, tree.args]
+		}
+
+		return reader.readSync(1) === 0 ? this.decodeOpcode(tree.zero, reader) : this.decodeOpcode(tree.one, reader)
 	}
 }
 
@@ -96,7 +256,7 @@ export class InstructionTextCodec implements Codec<Instruction, string> {
 					if ('immediateBits' in argDesc) {
 						// Validate value
 						const value = Number(arg)
-						if (value >= 0 && value < Math.pow(2, argDesc.immediateBits)) {
+						if (value >= 0 && value < (1 << argDesc.immediateBits)) {
 							throw new Error(`Invalid immediate arg: ${arg}`)
 						}
 

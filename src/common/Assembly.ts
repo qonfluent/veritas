@@ -6,5 +6,6 @@ export type Operation = {
 }
 
 export type Instruction = {
+	shiftBytes?: number
 	groups: Operation[][]
 }
