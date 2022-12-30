@@ -240,8 +240,8 @@ export function stmtToVerilog(stmt: Stmt, blocking = true, tabCount = 1, inAlway
 			return signalToVerilog(stmt)
 		}
 		case 'module': {
-			const portsStr = Object.entries(stmt[3]).map(([name, value]) => `.${name}(${exprToVerilog(value)})}`).join(',\n')
-			return `${tabs}${stmt[1]} ${stmt[2]} (${portsStr ? '\n' + portsStr + '\n' : ''});`
+			const portsStr = Object.entries(stmt[3]).map(([name, value]) => `${tabs}\t.${name}(${exprToVerilog(value)})`).join(',\n')
+			return `${tabs}${stmt[1]} ${stmt[2]} (${portsStr ? `\n${portsStr}\n${tabs});` : ');'}`
 		}
 	}
 

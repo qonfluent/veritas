@@ -38,4 +38,26 @@ describe('Verilog', () => {
 		const code = moduleToVerilog('test', module)
 		expect(code).toBe('module test(\n\tinput wire c,\n\tinput wire [0:15] d,\n\toutput wire e,\n\toutput wire [0:15] f\n);\n\n\twire a;\n\twire [0:15] b;\n\ttri [0:15] g;\n\n\tassign a = c;\n\tassign b = d;\n\tassign e = a;\n\tassign f = b;\n\nendmodule')
 	})
+
+	it('should generate Verilog with assigns and instances', () => {
+		const module: VerilogModule = {
+			body: [
+				['signal', 'a', { type: 'wire', width: 1 }],
+				['signal', 'b', { type: 'wire', width: 16 }],
+				['signal', 'c', { type: 'wire', width: 1, direction: 'input' }],
+				['signal', 'd', { type: 'wire', width: 16, direction: 'input' }],
+				['signal', 'e', { type: 'wire', width: 1, direction: 'output' }],
+				['signal', 'f', { type: 'wire', width: 16, direction: 'output' }],
+				['signal', 'g', { type: 'tri', width: 16 }],
+				['=', 'a', 'c'],
+				['=', 'b', 'd'],
+				['=', 'e', 'a'],
+				['=', 'f', 'b'],
+				['module', 'test2', 'test', { a: 'c', b: 'd', e: 'a', f: 'b' }],
+			]
+		}
+
+		const code = moduleToVerilog('test', module)
+		expect(code).toBe('module test(\n\tinput wire c,\n\tinput wire [0:15] d,\n\toutput wire e,\n\toutput wire [0:15] f\n);\n\n\twire a;\n\twire [0:15] b;\n\ttri [0:15] g;\n\n\ttest2 test (\n\t\t.a(c),\n\t\t.b(d),\n\t\t.e(a),\n\t\t.f(b)\n\t);\n\n\tassign a = c;\n\tassign b = d;\n\tassign e = a;\n\tassign f = b;\n\nendmodule')
+	})
 })
