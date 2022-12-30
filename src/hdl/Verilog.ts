@@ -36,9 +36,10 @@ export type AssignStmt = ['=', LExpr, RExpr]
 export type IfStmt = ['if', RExpr, Stmt[]] | ['if', RExpr, Stmt[], Stmt[]]
 export type CaseStmt = ['case' | 'casez' | 'casex', RExpr, [number | string | (number | string)[] | 'default', Stmt[]][]]
 export type ForStmt = ['for', VarExpr, RExpr, RExpr, RExpr, Stmt[]]
-export type AlwaysStmt = ['always', VarExpr | (VarExpr | [EdgeType, VarExpr])[], Stmt[]]
+export type AlwaysStmt = ['always', '*' | [EdgeType, VarExpr], Stmt[]]
 export type SignalStmt = ['signal', SignalName, Signal]
-export type Stmt = AssignStmt | IfStmt | CaseStmt | ForStmt | AlwaysStmt | SignalStmt
+export type ModuleInstanceStmt = ['module', string, string, Record<string, RExpr>]
+export type Stmt = AssignStmt | IfStmt | CaseStmt | ForStmt | AlwaysStmt | SignalStmt | ModuleInstanceStmt
 
 // Module with all signals expanded
 export type VerilogModule = {
@@ -155,15 +156,111 @@ export function signalToVerilog(signal: SignalStmt): string {
 	return `${'direction' in signal[2] ? signal[2].direction + ' ' : ''}${signal[2].type ?? 'wire'} ${widthStr}${signal[1]}`
 }
 
+export function exprToVerilog(expr: RExpr): string {
+	if (typeof expr === 'string') {
+		return expr
+	} else if (typeof expr === 'number' || typeof expr === 'bigint') {
+		return expr.toString()
+	}
+
+	if (expr.length === 2) {
+		// Concat
+		if (expr[0] === 'concat') {
+			return `{${expr[1].map(exprToVerilog).join(', ')}}`
+		}
+
+		// Unary
+		return `${expr[0]} ${exprToVerilog(expr[1])}`
+	} else if (expr.length === 3) {
+		// Const
+		if (expr[0] === 'const') {
+			return `${expr[1]}'d${expr[2].toString()}`
+		} else if (expr[0] === 'index') {
+			return `${exprToVerilog(expr[1])}[${exprToVerilog(expr[2])}]`
+		}
+
+		// Binary
+		return `${exprToVerilog(expr[1])} ${expr[0]} ${exprToVerilog(expr[2])}`
+	} else if (expr.length === 4) {
+		// Slice
+		if (expr[0] === 'slice') {
+			// TODO: Handle the other two forms of slice here
+			return `${exprToVerilog(expr[1])}[${exprToVerilog(expr[2])}+:${expr[3]}]`
+		}
+
+		// Ternary
+		return `${exprToVerilog(expr[1])} ? ${exprToVerilog(expr[2])} : ${exprToVerilog(expr[3])}`
+	}
+
+	throw new Error(`Invalid expression: ${expr}`)
+}
+
+export function stmtToVerilog(stmt: Stmt, blocking = true, tabCount = 1, inAlways = false): string {
+	const tabs = '\t'.repeat(tabCount)
+	
+	switch (stmt[0]) {
+		case '=': {
+			return `${tabs}${blocking ? 'assign ' : ''}${exprToVerilog(stmt[1])} ${blocking ? '=' : '<='} ${exprToVerilog(stmt[2])};`
+		}
+		case 'if': {
+			const ifStr = `${tabs}if (${exprToVerilog(stmt[1])}) begin\n${stmt[2].map(stmt => stmtToVerilog(stmt, blocking, tabCount + 1, inAlways)).join('\n')}\n${tabs}end`
+			const elseStr = stmt[3] ? `\n${tabs}else begin\n${stmt[3].map(stmt => stmtToVerilog(stmt, blocking, tabCount + 1, inAlways)).join('\n')}\n${tabs}end` : ''
+			return ifStr + elseStr
+		}
+		case 'for': {
+			const forVar = stmt[1]
+			const forHeader = `${tabs}for (${forVar} = ${exprToVerilog(stmt[2])}; ${exprToVerilog(stmt[3])}; ${exprToVerilog(stmt[4])}) begin`
+			const forBody = stmt[5].map(stmt => stmtToVerilog(stmt, blocking, tabCount + 1, inAlways)).join('\n')
+			const forFooter = `\n${tabs}end`
+			return forHeader + '\n' + forBody + forFooter
+		}
+		case 'always': {
+			assert(!inAlways, 'Cannot nest always blocks')
+
+			const rest = `${stmt[2].map(stmt => stmtToVerilog(stmt, false, tabCount + 1, true)).join('\n')}\n${tabs}end`
+
+			if (stmt[1] instanceof Array) {
+				return `${tabs}always @(${stmt[1][0]} ${stmt[1][1]}) begin\n` + rest
+			}
+
+			return `${tabs}always @* begin\n` + rest
+		}
+		case 'case': {
+			const caseStr = `${tabs}case (${exprToVerilog(stmt[1])})`
+			const caseBody = stmt[2].map((caseItem) => {
+				const caseItemStr = caseItem[0] instanceof Array ? caseItem[0].map((x) => `${tabs}\t${x}`).join(':\n') : `${tabs}\t${caseItem[0]}`
+				const caseItemBody = caseItem[1].map(stmt => stmtToVerilog(stmt, blocking, tabCount + 2, inAlways)).join('\n')
+				return `\n${caseItemStr}: begin\n${caseItemBody}\n${tabs}\tend`
+			}).join('')
+			const caseFooter = `\n${tabs}endcase`
+
+			return caseStr + caseBody + caseFooter
+		}
+		case 'signal': {
+			return signalToVerilog(stmt)
+		}
+		case 'module': {
+			const portsStr = Object.entries(stmt[3]).map(([name, value]) => `.${name}(${exprToVerilog(value)})}`).join(',\n')
+			return `${tabs}${stmt[1]} ${stmt[2]} (${portsStr ? '\n' + portsStr + '\n' : ''});`
+		}
+	}
+
+	throw new Error(`Invalid statement: ${stmt}`)
+}
+
 export function moduleToVerilog(name: string, module: VerilogModule): string {
+	// Get the ports and internals stringified
 	const signals = module.body.filter((stmt): stmt is SignalStmt => stmt[0] === 'signal')
 	const [ports, internals] = partition(signals, (stmt) => 'direction' in stmt[2])
-
 	const portsStr = ports.map((stmt) => '\t' + signalToVerilog(stmt)).join(',\n')
 	const internalsStr = internals.map((stmt) => '\t' + signalToVerilog(stmt) + ';').join('\n')
 
+	// Fill out the rest of the content
 	const headerStr = `module ${name}(${portsStr ? '\n' + portsStr + '\n' : ''});`
+	const instancesStr = module.body.filter((stmt) => stmt[0] === 'module').map((stmt) => stmtToVerilog(stmt)).join('\n')
+	const bodyStr = module.body.filter((stmt) => stmt[0] !== 'signal' && stmt[0] !== 'module').map((stmt) => stmtToVerilog(stmt)).join('\n')
 	const footerStr = 'endmodule'
 
-	return `${headerStr}\n\n${internalsStr}\n\n${footerStr}`
+	// Generate final result
+	return `${headerStr}\n\n${internalsStr ? internalsStr + '\n\n' : ''}${instancesStr ? instancesStr + '\n\n' : ''}${bodyStr ? bodyStr + '\n\n' : ''}${footerStr}`
 }
