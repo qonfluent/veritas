@@ -83,13 +83,16 @@ describe('Instruction codec', () => {
 			const encoded = codec.encode(instruction)
 			const decoded = codec.decode(encoded)
 
-			expect(decoded).toEqual({ ...instruction, shiftBytes: 2 })
+			expect(decoded).toEqual({ ...instruction, shiftBytes: 4 })
 		}
 	})
 
 	it('Can encode and decode random instructions', () => {
-		const ops = rangeMap(16, (i) => randomOperationDesc(`op_${i}`, 1, 32))
-		const desc = randomDecoderDesc(1, 1, 16, ops.length)
+		const groupCount = 3
+		const laneCount = 8
+		const opCount = 16
+		const ops = rangeMap(groupCount * laneCount * opCount, (i) => randomOperationDesc(`op_${i}`, 2, 16))
+		const desc = randomDecoderDesc(1, laneCount, opCount , ops.length)
 		const registerFiles = {}
 		const textCodec = new InstructionTextCodec(desc, ops, registerFiles)
 		const bytesCodec = new InstructionBytesCodec(desc, ops, registerFiles)
@@ -102,8 +105,11 @@ describe('Instruction codec', () => {
 			expect(decoded).toEqual(instruction)
 
 			const encodedBytes = bytesCodec.encode(instruction)
+			const expectedShiftBytes = bytesCodec.encodedBytes(instruction)
+			expect(encodedBytes.length === expectedShiftBytes)
+
 			const decodedBytes = bytesCodec.decode(encodedBytes)
-			expect(decodedBytes).toEqual({ ...instruction, shiftBytes: bytesCodec.encodedBytes(instruction) })
+			expect(decodedBytes).toEqual({ ...instruction, shiftBytes: expectedShiftBytes })
 		}
 	})
 })

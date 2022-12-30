@@ -1,5 +1,6 @@
 import { ArgDesc, ArgName, OperationDesc, RegisterFileDesc, RegisterFileName } from '../common/Processor'
 import PriorityQueue from 'ts-priority-queue'
+import assert from 'assert'
 
 export type DecoderTree = {
 	opcode: number
@@ -22,6 +23,7 @@ export function createDecoderTree(ops: OperationDesc[], registerFiles: Record<Re
 	// Create priority queue for operations
 	const queue = new PriorityQueue<DecoderQueueEntry>({ comparator: (a, b) => a.bits - b.bits })
 	ops.forEach((op, opcode) => {
+		assert(op !== undefined && 'args' in op)
 		const bits = Object.values(op.args).reduce((bits, arg) => {
 			const argBits
 				= 'immediateBits' in arg ? arg.immediateBits
