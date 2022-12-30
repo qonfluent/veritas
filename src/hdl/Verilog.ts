@@ -1,3 +1,6 @@
+import assert from "assert"
+import { partition } from "../common/Util"
+
 // Signal definitions
 export type SignalWidth = number
 export type SignalName = string
@@ -144,4 +147,23 @@ export function getStmtVars(type: VarType, stmt: Stmt): VarExpr[] {
 	}
 
 	throw new Error(`Invalid statement: ${stmt}`)
+}
+
+export function signalToVerilog(signal: SignalStmt): string {
+	assert(signal[2].width >= 1, `Signal ${signal[1]} has width ${signal[2].width}, must be at least 1 bit`)
+	const widthStr = signal[2].width === 1 ? '' : `[0:${signal[2].width - 1}] `
+	return `${'direction' in signal[2] ? signal[2].direction + ' ' : ''}${signal[2].type ?? 'wire'} ${widthStr}${signal[1]}`
+}
+
+export function moduleToVerilog(name: string, module: VerilogModule): string {
+	const signals = module.body.filter((stmt): stmt is SignalStmt => stmt[0] === 'signal')
+	const [ports, internals] = partition(signals, (stmt) => 'direction' in stmt[2])
+
+	const portsStr = ports.map((stmt) => '\t' + signalToVerilog(stmt)).join(',\n')
+	const internalsStr = internals.map((stmt) => '\t' + signalToVerilog(stmt) + ';').join('\n')
+
+	const headerStr = `module ${name}(${portsStr ? '\n' + portsStr + '\n' : ''});`
+	const footerStr = 'endmodule'
+
+	return `${headerStr}\n\n${internalsStr}\n\n${footerStr}`
 }
