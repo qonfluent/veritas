@@ -1,6 +1,6 @@
 import { rangeMap } from "../../src/common/Util"
 import { moduleToVerilog } from "../../src/hdl/Verilog"
-import { createDecoderModule } from "../../src/processor/Decoder"
+import { createShortDecoderModule } from "../../src/processor/ShortDecoder"
 import { createDecoderTree, createDecoderTreeModule } from "../../src/processor/DecoderTree"
 import { randomOperationDesc } from "../Common"
 
@@ -26,7 +26,7 @@ describe('Decoder Tree', () => {
 	})
 })
 
-describe('Decoder', () => {
+describe('Short Decoder', () => {
 	it('Can be created', () => {
 		const groupCount = 1
 		const laneCount = 1
@@ -42,7 +42,7 @@ describe('Decoder', () => {
 			]
 		}
 
-		const decoder = createDecoderModule(desc)
+		const decoder = createShortDecoderModule(desc)
 
 		const code = moduleToVerilog('test', decoder)
 		console.log(code)

@@ -1,6 +1,7 @@
-import { InstructionBytesCodec, InstructionTextCodec } from "../../src/assembler/InstructionCodec"
-import { rangeMap } from "../../src/common/Util"
-import { randomDecoderDesc, randomInstruction, randomOperationDesc } from "../Common"
+import { ShortInstructionBytesCodec } from '../../src/assembler/instruction/ShortBytesCodec'
+import { ShortInstructionTextCodec } from '../../src/assembler/instruction/ShortTextCodec'
+import { rangeMap } from '../../src/common/Util'
+import { randomDecoderDesc, randomInstruction, randomOperationDesc } from '../Common'
 
 describe('Instruction codec', () => {
 	it('should encode and decode instructions', () => {
@@ -71,7 +72,7 @@ describe('Instruction codec', () => {
 		}
 
 		{
-			const codec = new InstructionTextCodec(desc, ops, registerFiles)
+			const codec = new ShortInstructionTextCodec(desc, ops, registerFiles)
 			const encoded = codec.encode(instruction)
 			const decoded = codec.decode(encoded)
 
@@ -79,7 +80,7 @@ describe('Instruction codec', () => {
 		}
 		
 		{
-			const codec = new InstructionBytesCodec(desc, ops, registerFiles)
+			const codec = new ShortInstructionBytesCodec(desc, ops, registerFiles)
 			const encoded = codec.encode(instruction)
 			const decoded = codec.decode(encoded)
 
@@ -94,8 +95,8 @@ describe('Instruction codec', () => {
 		const ops = rangeMap(groupCount * laneCount * opCount, (i) => randomOperationDesc(`op_${i}`, 2, 16))
 		const desc = randomDecoderDesc(1, laneCount, opCount , ops.length)
 		const registerFiles = {}
-		const textCodec = new InstructionTextCodec(desc, ops, registerFiles)
-		const bytesCodec = new InstructionBytesCodec(desc, ops, registerFiles)
+		const textCodec = new ShortInstructionTextCodec(desc, ops, registerFiles)
+		const bytesCodec = new ShortInstructionBytesCodec(desc, ops, registerFiles)
 
 		const TEST_COUNT = 10_000
 		for (let i = 0; i < TEST_COUNT; i++) {

@@ -1,14 +1,14 @@
 import { clog2, rangeMap } from '../common/Util'
 import { Module } from '../hdl/Module'
-import { RExpr, Stmt } from '../hdl/Verilog'
+import { Stmt } from '../hdl/Verilog'
 import { flipBits } from './Common'
 import { createDecoderTreeModule, DecoderQueueEntry } from './DecoderTree'
 
-export type DecoderDesc = {
+export type ShortDecoderDesc = {
 	groups: DecoderQueueEntry[][]
 }
 
-export function createDecoderModule(desc: DecoderDesc): Module {
+export function createShortDecoderModule(desc: ShortDecoderDesc): Module {
 	const trees = desc.groups.map((group) => group.map((tree) => createDecoderTreeModule(tree)))
 
 	const instructionBits = desc.groups.reduce((sum, lanes) => sum + lanes.reduce((sum, { bits }) => sum + bits, 0), 0)
@@ -77,7 +77,7 @@ export function createDecoderModule(desc: DecoderDesc): Module {
 						if (laneCountBits[i] === 0) {
 							return ['=', `valid_${i}_${j}`, 'valid']
 						}
-						
+
 						return ['=', `valid_${i}_${j}`, ['&&', 'valid', ['>=', `laneCount_${i}`, j]]]
 					})),
 
