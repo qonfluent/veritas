@@ -53,7 +53,7 @@ describe('Verilog', () => {
 				['=', 'b', 'd'],
 				['=', 'e', 'a'],
 				['=', 'f', 'b'],
-				['module', 'test2', 'test', { a: 'c', b: 'd', e: 'a', f: 'b' }],
+				['instance', 'test2', 'test', { a: 'c', b: 'd', e: 'a', f: 'b' }],
 			]
 		}
 

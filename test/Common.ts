@@ -21,7 +21,7 @@ export function randomDecoderDesc(groupCount: number, maxLaneCount: number, maxO
 export function randomOperationDesc(opcode: OpcodeName, maxArgs: number, maxArgBits: number): OperationDesc {
 	return {
 		opcode,
-		args: Object.fromEntries(rangeMap(Math.floor(Math.random() * (maxArgs + 1)), (i) => {
+		args: maxArgs === 0 ? {} : Object.fromEntries(rangeMap(Math.floor(Math.random() * (maxArgs + 1)), (i) => {
 			return [`arg_${i}`, { immediateBits: Math.floor(Math.random() * (maxArgBits + 1)) }]
 		}))
 	}

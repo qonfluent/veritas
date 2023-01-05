@@ -38,8 +38,9 @@ export type CaseStmt = ['case' | 'casez' | 'casex', RExpr, [number | string | (n
 export type ForStmt = ['for', VarExpr, RExpr, RExpr, RExpr, Stmt[]]
 export type AlwaysStmt = ['always', '*' | [EdgeType, VarExpr], Stmt[]]
 export type SignalStmt = ['signal', SignalName, Signal]
-export type ModuleInstanceStmt = ['module', string, string, Record<string, RExpr>]
-export type Stmt = AssignStmt | IfStmt | CaseStmt | ForStmt | AlwaysStmt | SignalStmt | ModuleInstanceStmt
+export type ModuleInstanceStmt = ['instance', string, string, Record<string, RExpr>]
+export type ModuleStmt = ['module', string, VerilogModule]
+export type Stmt = AssignStmt | IfStmt | CaseStmt | ForStmt | AlwaysStmt | SignalStmt | ModuleInstanceStmt | ModuleStmt
 
 // Module with all signals expanded
 export type VerilogModule = {
@@ -239,9 +240,12 @@ export function stmtToVerilog(stmt: Stmt, blocking = true, tabCount = 1, inAlway
 		case 'signal': {
 			return signalToVerilog(stmt)
 		}
-		case 'module': {
+		case 'instance': {
 			const portsStr = Object.entries(stmt[3]).map(([name, value]) => `${tabs}\t.${name}(${exprToVerilog(value)})`).join(',\n')
 			return `${tabs}${stmt[1]} ${stmt[2]} (${portsStr ? `\n${portsStr}\n${tabs});` : ');'}`
+		}
+		case 'module': {
+			return moduleToVerilog(stmt[1], stmt[2])
 		}
 	}
 
@@ -257,10 +261,11 @@ export function moduleToVerilog(name: string, module: VerilogModule): string {
 
 	// Fill out the rest of the content
 	const headerStr = `module ${name}(${portsStr ? '\n' + portsStr + '\n' : ''});`
-	const instancesStr = module.body.filter((stmt) => stmt[0] === 'module').map((stmt) => stmtToVerilog(stmt)).join('\n')
-	const bodyStr = module.body.filter((stmt) => stmt[0] !== 'signal' && stmt[0] !== 'module').map((stmt) => stmtToVerilog(stmt)).join('\n')
+	const instancesStr = module.body.filter((stmt) => stmt[0] === 'instance').map((stmt) => stmtToVerilog(stmt)).join('\n')
+	const bodyStr = module.body.filter((stmt) => stmt[0] !== 'signal' && stmt[0] !== 'module' && stmt[0] !== 'instance').map((stmt) => stmtToVerilog(stmt)).join('\n')
+	const moduleStr = module.body.filter((stmt): stmt is ModuleStmt => 'module' in stmt).map((x) => moduleToVerilog(x[1], x[2])).join('\n\n')
 	const footerStr = 'endmodule'
 
 	// Generate final result
-	return `${headerStr}\n\n${internalsStr ? internalsStr + '\n\n' : ''}${instancesStr ? instancesStr + '\n\n' : ''}${bodyStr ? bodyStr + '\n\n' : ''}${footerStr}`
+	return `${headerStr}\n\n${internalsStr ? internalsStr + '\n\n' : ''}${instancesStr ? instancesStr + '\n\n' : ''}${bodyStr ? bodyStr + '\n\n' : ''}${footerStr}${moduleStr ? '\n\n' + moduleStr : ''}`
 }
