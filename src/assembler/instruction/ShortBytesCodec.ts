@@ -1,10 +1,10 @@
-import { BufferedWritable, BitstreamWriter, BitstreamReader } from "@astronautlabs/bitstream"
-import assert from "assert"
-import { Instruction } from "../../common/Assembly"
-import { Codec } from "../../common/Codec"
-import { DecoderDesc, OperationDesc, RegisterFileName, RegisterFileDesc } from "../../common/Processor"
-import { clog2, rangeMap } from "../../common/Util"
-import { DecoderTree, createDecoderTree } from "../../processor/DecoderTree"
+import { BufferedWritable, BitstreamWriter, BitstreamReader } from '@astronautlabs/bitstream'
+import assert from 'assert'
+import { Instruction } from '../../common/Assembly'
+import { Codec } from '../../common/Codec'
+import { ShortDecoderDesc, OperationDesc, RegisterFileName, RegisterFileDesc } from '../../common/Processor'
+import { clog2, rangeMap } from '../../common/Util'
+import { DecoderTree, createDecoderTree } from '../../processor/DecoderTree'
 
 type OpcodeData = {
 	value: number
@@ -24,7 +24,7 @@ export class ShortInstructionBytesCodec implements Codec<Instruction, Uint8Array
 	private readonly _trees: DecoderTree[][]
 
 	public constructor(
-		private readonly _desc: DecoderDesc,
+		private readonly _desc: ShortDecoderDesc,
 		private readonly _ops: OperationDesc[],
 		private readonly _registerFiles: Record<RegisterFileName, RegisterFileDesc>,
 	) {

@@ -15,10 +15,13 @@ export type MetaData = {
 
 // Immediate arguments skip the register file
 export type ArgDescImmedite = MetaData & { immediateBits: number }
+
 // Register arguments are read from the register file
 export type ArgDescRegister = MetaData & { registerFile: RegisterFileName }
+
 // Cache arguments are read from the cache or written to the cache per direction
 export type ArgDescCache = MetaData & { cache: CacheName, direction: 'read' | 'write' | 'readwrite' }
+
 export type ArgDesc = ArgDescImmedite | ArgDescRegister | ArgDescCache
 
 // An operation unit represents a single operation in the core
@@ -38,7 +41,7 @@ export type OperationUnitDesc = OperationDesc & {
 // Within each group there is a set of lanes, which are decoded in parallel
 // Within each lane, there are a se of operations, which are selected between by the decoder
 // Each operation index is looked up in the core's operation list to get the argument bits
-export type DecoderDesc = MetaData & {
+export type ShortDecoderDesc = MetaData & {
 	groups: OperationIndex[][][]
 }
 
@@ -104,11 +107,12 @@ export type CacheHierarchyDesc = MetaData & {
 // 2. The instruction cache way is selected
 // 3. The data line is shifted into the decoder group's instruction stream buffer
 // 4. The decoder decodes the instruction from the instruction stream buffer
-// 5. If the operation needs a register, the register file is read
-// 5.1. If the operation does not need a register, execution begins
-// 6. The operation is executed
+// 5. The operation is executed
+// 5.1. If needed, the register file is read(based on the arg types in the operation desc)
+// 5.2. The operation is executed(adds a fixed latency)
+// 5.3. If needed, the register file is written(based on the arg types in the operation desc)
 export type CoreDesc = MetaData & {
-	decoders: DecoderDesc[]
+	decoders: ShortDecoderDesc[]
 	ops: OperationUnitDesc[]
 	regFiles: Record<RegisterFileName, RegisterFileDesc>
 	operationModules: Record<ModuleName, Module>

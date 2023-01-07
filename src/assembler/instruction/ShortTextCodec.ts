@@ -1,11 +1,11 @@
 import { Instruction } from '../../common/Assembly'
 import { Codec } from '../../common/Codec'
-import { DecoderDesc, OperationDesc, RegisterFileDesc, RegisterFileName } from '../../common/Processor'
+import { ShortDecoderDesc, OperationDesc, RegisterFileDesc, RegisterFileName } from '../../common/Processor'
 
 
 export class ShortInstructionTextCodec implements Codec<Instruction, string> {
 	public constructor(
-		private readonly _desc: DecoderDesc,
+		private readonly _desc: ShortDecoderDesc,
 		private readonly _ops: OperationDesc[],
 		private readonly _registerFiles: Record<RegisterFileName, RegisterFileDesc>,
 	) {}

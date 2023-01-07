@@ -1,9 +1,9 @@
 import assert from 'assert'
 import { Instruction } from '../src/common/Assembly'
-import { DecoderDesc, OpcodeName, OperationDesc, RegisterFileDesc, RegisterFileName } from '../src/common/Processor'
+import { OpcodeName, OperationDesc, RegisterFileDesc, RegisterFileName, ShortDecoderDesc } from '../src/common/Processor'
 import { rangeMap } from '../src/common/Util'
 
-export function randomDecoderDesc(groupCount: number, maxLaneCount: number, maxOpCount: number, opcodeCount: number): DecoderDesc {
+export function randomDecoderDesc(groupCount: number, maxLaneCount: number, maxOpCount: number, opcodeCount: number): ShortDecoderDesc {
 	let index = 0
 	const groups = rangeMap(groupCount, () => {
 		return rangeMap(Math.floor(Math.random() * maxLaneCount) + 1, () => {
@@ -27,7 +27,7 @@ export function randomOperationDesc(opcode: OpcodeName, maxArgs: number, maxArgB
 	}
 }
 
-export function randomInstruction(desc: DecoderDesc, ops: OperationDesc[], registerFiles: Record<RegisterFileName, RegisterFileDesc>): Instruction {
+export function randomInstruction(desc: ShortDecoderDesc, ops: OperationDesc[], registerFiles: Record<RegisterFileName, RegisterFileDesc>): Instruction {
 	return {
 		groups: desc.groups.map((lanes) => {
 			const laneCount = Math.floor(Math.random() * lanes.length) + 1
