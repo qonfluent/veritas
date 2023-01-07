@@ -45,9 +45,24 @@ export type ShortDecoderDesc = MetaData & {
 	groups: OperationIndex[][][]
 }
 
+export type WideDecoderGroup = {
+	split: {
+		type: 'immediate' | 'register'
+		width: number
+	}[]
+} | {
+	join: number[]
+	invertable: boolean
+}
+
+export type WideDecoderDesc = MetaData & {
+	lanes: OperationIndex[][]
+	groups: WideDecoderGroup[]
+}
+
 // A decoder group is a single decoder with a cache and instruction stream buffer
 export type DecoderGroupDesc = MetaData & {
-	decoder: DecoderDesc
+	decoder: ShortDecoderDesc | WideDecoderDesc
 	cache: CacheName
 }
 
@@ -163,16 +178,26 @@ export type MemoryDesc = MetaData & {
 	channels: number
 }
 
-export type SystemDeviceDesc = MetaData & {}
+export type ChannelDesc = MetaData & {}
 
-// A system is a set of processors and memories
+export type SystemDeviceDesc = MetaData & ({
+	processor: ProcessorDesc
+} | {
+	memory: MemoryDesc
+} | {
+	channel: ChannelDesc
+})
+
+// A system is a tree of devices
 export type SystemDesc = MetaData & {
-	processors: ProcessorDesc[]
-	memories: MemoryDesc[]
 	devices: SystemDeviceDesc[]
+} | {
+	systems: SystemDesc[]
 }
 
-// A network is a set of systems
+// A network is tree of systems
 export type NetworkDesc = MetaData & {
 	systems: SystemDesc[]
+} | {
+	networks: NetworkDesc[]
 }
