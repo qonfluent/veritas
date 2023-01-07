@@ -22,27 +22,7 @@ export function createShortDecoderModule(desc: ShortDecoderDesc): Module {
 	// Every odd entry is 0, every even is the previous group's width
 	const groupOffsets = desc.groups.map((_, i) => i === 0 || (i & 1) !== 0 ? 0 : groupBits[i - 1])
 
-	const instances = trees.flatMap((lanes, i) => lanes.map<Stmt>((_, j) => ['instance', `decoder_${i}_${j}`, `decoder_${i}_${j}`, {
-		clk: 'clk',
-		rst: 'rst',
-		
-		instruction:
-			i === 0 ? ['slice', 'instruction', headerBits, groupBits[0]]
-							// Flips the bits of the inner slice if the group is odd. This is to allow for the shifting operations to work nicely
-			        :  i & 1
-								? flipBits(`decoder_reg_${(i - 1) >> 1}`, groupBits[i])
-								: ['slice', `decoder_reg_${(i - 1) >> 1}`, groupOffsets[i], groupBits[i]]
-	}]))
-	const modules = trees.flatMap((lanes, i) => lanes.map<Stmt>((module, j) => ['module', `decoder_${i}_${j}`, module]))
-
-	const outputs = desc.groups.flatMap((lanes, i) => lanes.flatMap<Stmt>((decoder, j) => [
-		['signal', `valid_${i}_${j}`, { width: 1, direction: 'output' }],
-		['signal', `opcode_${i}_${j}`, { width: clog2(decoder.count), direction: 'output' }],
-		...(decoder.argBits === 0 ? [] : [['signal', `args_${i}_${j}`, { width: decoder.argBits, direction: 'output' }] as Stmt]),
-	]))
-
 	const regWidths = rangeMap((desc.groups.length - 1) >> 1, (i) => groupBits.reduce((sum, bits, j) => sum + (j > 2 * i ? bits : 0), 0))
-	const regs = rangeMap<Stmt>((desc.groups.length - 1) >> 1, (i) => ['signal', `decoder_reg_${i}`, { width: regWidths[i] }])
 
 	return {
 		body: [
@@ -53,15 +33,29 @@ export function createShortDecoderModule(desc: ShortDecoderDesc): Module {
 			['signal', 'valid', { width: 1, direction: 'input' }],
 			['signal', 'instruction', { width: instructionBits, direction: 'input' }],
 			['signal', 'shiftBytes', { width: shiftBits, direction: 'output' }],
-			...outputs,
+			...desc.groups.flatMap((lanes, i) => lanes.flatMap<Stmt>((decoder, j) => [
+				['signal', `valid_${i}_${j}`, { width: 1, direction: 'output' }],
+				['signal', `opcode_${i}_${j}`, { width: clog2(decoder.count), direction: 'output' }],
+				...(decoder.argBits === 0 ? [] : [['signal', `args_${i}_${j}`, { width: decoder.argBits, direction: 'output' }] as Stmt]),
+			])),
 
 			// Create internal registers and wires
-			...regs,
+			...rangeMap<Stmt>((desc.groups.length - 1) >> 1, (i) => ['signal', `decoder_reg_${i}`, { width: regWidths[i] }]),
 			...desc.groups.flatMap<Stmt>((_, i) => laneCountBits[i] ? [['signal', `laneCount_${i}`, { width: laneCountBits[i] }]] : []),
 
 			// Create decoder trees
-			...instances,
-			...modules,
+			...trees.flatMap((lanes, i) => lanes.map<Stmt>((_, j) => ['instance', `decoder_${i}_${j}`, `decoder_${i}_${j}`, {
+				clk: 'clk',
+				rst: 'rst',
+				
+				instruction:
+					i === 0 ? ['slice', 'instruction', headerBits, groupBits[0]]
+									// Flips the bits of the inner slice if the group is odd. This is to allow for the shifting operations to work nicely
+									:  i & 1
+										? flipBits(`decoder_reg_${(i - 1) >> 1}`, groupBits[i])
+										: ['slice', `decoder_reg_${(i - 1) >> 1}`, groupOffsets[i], groupBits[i]]
+			}])),
+			...trees.flatMap((lanes, i) => lanes.map<Stmt>((module, j) => ['module', `decoder_${i}_${j}`, module])),
 
 			// Assign lane counts
 			...desc.groups.flatMap<Stmt>((_, i) => laneCountBits[i] ? [['=', `laneCount_${i}`, ['slice', 'instruction', laneCountOffsets[i], laneCountBits[i]]]] : []),
