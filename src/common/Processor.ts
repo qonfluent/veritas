@@ -49,10 +49,12 @@ export type WideDecoderGroup = {
 	split: {
 		type: 'immediate' | 'register'
 		width: number
+		name: string
 	}[]
 } | {
 	join: number[]
 	invertable: boolean
+	name: string
 }
 
 export type WideDecoderDesc = MetaData & {

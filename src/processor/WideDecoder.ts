@@ -10,11 +10,18 @@ export type WideDecoderDesc = {
 	groups: WideDecoderGroup[]
 }
 
-// Format: [shiftBytes][laneCount]([opcode0][argCount00][argCount01]...)([arg00][arg01]...)([arg10][arg11]...)...
-export function createWideDecoderTree(desc: WideDecoderDesc): Module {
+export function getOpcodeBits(desc: WideDecoderDesc): number[] {
+	return desc.lanes.map((x) => clog2(x))
+}
+
+export function getArgCountBits(desc: WideDecoderDesc): number[] {
+	return desc.groups.map((x) => 'split' in x ? clog2(x.split.length) : (x.invertable ? 1 : 0) + clog2(x.join.length))
+}
+
+export function getMaxBodyBits(desc: WideDecoderDesc): number {
 	// Calculate bits for each lane's opcode, arg counts, and arg widths
-	const opcodeBits = desc.lanes.map((x) => clog2(x))
-	const argCountBits = desc.groups.map((x) => 'split' in x ? clog2(x.split.length) : (x.invertable ? 1 : 0) + clog2(x.join.length))
+	const opcodeBits = getOpcodeBits(desc)
+	const argCountBits = getArgCountBits(desc)
 	const argBits = desc.groups.map((x) => 'split' in x ? x.split.reduce((sum, arg) => sum + arg.width, 0) : x.join.reduce((sum, bits) => sum + bits, 0))
 	
 	// Calculate totals
@@ -24,6 +31,13 @@ export function createWideDecoderTree(desc: WideDecoderDesc): Module {
 
 	// Calculate header bits(shift + count)
 	const maxBodyBits = totalOpcodeBits + totalArgCountBits + totalArgBits
+
+	return maxBodyBits
+}
+
+// Format: [shiftBytes][laneCount]([opcode0][argCount00][argCount01]...)([arg00][arg01]...)([arg10][arg11]...)...
+export function createWideDecoderTree(desc: WideDecoderDesc): Module {
+	const maxBodyBits = getMaxBodyBits(desc)
 	const shiftBits = clog2(maxBodyBits / 8)
 	const countBits = clog2(desc.lanes.length)
 	const headerBits = shiftBits + countBits
@@ -32,6 +46,8 @@ export function createWideDecoderTree(desc: WideDecoderDesc): Module {
 	const instructionBits = headerBits + maxBodyBits
 
 	// Calculate opcode and arg count offsets
+	const opcodeBits = getOpcodeBits(desc)
+	const argCountBits = getArgCountBits(desc)
 	const sliceBits = opcodeBits.map((opBits, i) => opBits + argCountBits[i])
 	const opcodeOffset = sliceBits.map((_, i) => headerBits + sliceBits.reduce((sum, bits, j) => sum + (i > j ? bits : 0), 0))
 	const argCountOffset = desc.groups.map((_, i) => argCountBits.reduce((sum, bits, j) => sum + (i > j ? bits : 0), 0))
