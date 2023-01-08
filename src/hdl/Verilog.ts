@@ -1,5 +1,5 @@
-import assert from "assert"
-import { partition } from "../common/Util"
+import assert from 'assert'
+import { partition } from '../common/Util'
 
 // Signal definitions
 export type SignalWidth = number
@@ -255,7 +255,7 @@ export function stmtToVerilog(stmt: Stmt, blocking = true, tabCount = 1, inAlway
 export function moduleToVerilog(name: string, module: VerilogModule): string {
 	// Get the ports and internals stringified
 	const signals = module.body.filter((stmt): stmt is SignalStmt => stmt[0] === 'signal')
-	const [ports, internals] = partition(signals, (stmt) => 'direction' in stmt[2])
+	const [internals, ports] = partition(signals, (stmt) => 'direction' in stmt[2])
 	const portsStr = ports.map((stmt) => '\t' + signalToVerilog(stmt)).join(',\n')
 	const internalsStr = internals.map((stmt) => '\t' + signalToVerilog(stmt) + ';').join('\n')
 
