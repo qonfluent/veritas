@@ -8,12 +8,16 @@ export type ShortDecoderDesc = {
 	groups: DecoderQueueEntry[][]
 }
 
+export function getMaxBodyBits(desc: ShortDecoderDesc): number {
+	return desc.groups.reduce((sum, lanes) => sum + lanes.reduce((sum, { bits }) => sum + bits, 0), 0)
+}
+
 export function createShortDecoderModule(desc: ShortDecoderDesc): Module {
 	const trees = desc.groups.map((group) => group.map((tree) => createDecoderTreeModule(tree)))
 
-	const instructionBits = desc.groups.reduce((sum, lanes) => sum + lanes.reduce((sum, { bits }) => sum + bits, 0), 0)
+	const bodyBits = getMaxBodyBits(desc)
 
-	const shiftBits = clog2(Math.ceil(instructionBits / 8))
+	const shiftBits = clog2(Math.ceil(bodyBits / 8))
 	const laneCountBits = desc.groups.map((lanes) => clog2(lanes.length))
 	const laneCountOffsets = laneCountBits.map((_, i) => laneCountBits.reduce((sum, bits, j) => sum + (j < i ? bits : 0), 0))
 	const headerBits = shiftBits + laneCountBits.reduce((sum, bits) => sum + bits, 0)
@@ -31,7 +35,7 @@ export function createShortDecoderModule(desc: ShortDecoderDesc): Module {
 			['signal', 'rst', { width: 1, direction: 'input' }],
 
 			['signal', 'valid', { width: 1, direction: 'input' }],
-			['signal', 'instruction', { width: instructionBits, direction: 'input' }],
+			['signal', 'instruction', { width: headerBits + bodyBits, direction: 'input' }],
 			['signal', 'shiftBytes', { width: shiftBits, direction: 'output' }],
 			...desc.groups.flatMap((lanes, i) => lanes.flatMap<Stmt>((decoder, j) => [
 				['signal', `valid_${i}_${j}`, { width: 1, direction: 'output' }],

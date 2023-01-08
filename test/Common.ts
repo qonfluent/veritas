@@ -1,5 +1,5 @@
 import assert from 'assert'
-import { Instruction } from '../src/common/Assembly'
+import { ShortInstruction } from '../src/common/Assembly'
 import { OpcodeName, OperationDesc, RegisterFileDesc, RegisterFileName, ShortDecoderDesc } from '../src/common/Processor'
 import { rangeMap } from '../src/common/Util'
 
@@ -27,7 +27,7 @@ export function randomOperationDesc(opcode: OpcodeName, maxArgs: number, maxArgB
 	}
 }
 
-export function randomInstruction(desc: ShortDecoderDesc, ops: OperationDesc[], registerFiles: Record<RegisterFileName, RegisterFileDesc>): Instruction {
+export function randomInstruction(desc: ShortDecoderDesc, ops: OperationDesc[], registerFiles: Record<RegisterFileName, RegisterFileDesc>): ShortInstruction {
 	return {
 		groups: desc.groups.map((lanes) => {
 			const laneCount = Math.floor(Math.random() * lanes.length) + 1

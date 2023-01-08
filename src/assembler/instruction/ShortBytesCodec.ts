@@ -1,201 +1,200 @@
-import { BufferedWritable, BitstreamWriter, BitstreamReader } from '@astronautlabs/bitstream'
+import { BitstreamReader, BitstreamWriter, BufferedWritable } from '@astronautlabs/bitstream'
 import assert from 'assert'
-import { Instruction } from '../../common/Assembly'
+import { ShortInstruction } from '../../common/Assembly'
 import { Codec } from '../../common/Codec'
-import { ShortDecoderDesc, OperationDesc, RegisterFileName, RegisterFileDesc } from '../../common/Processor'
+import { ShortDecoderDesc, OperationDesc, RegisterFileDesc, ArgDesc, RegisterFileName } from '../../common/Processor'
 import { clog2, rangeMap } from '../../common/Util'
-import { DecoderTree, createDecoderTree } from '../../processor/DecoderTree'
+import { createDecoderTree, DecoderQueueEntry, DecoderTree } from '../../processor/DecoderTree'
+import { getMaxBodyBits } from '../../processor/ShortDecoder'
 
-type OpcodeData = {
-	value: number
-	width: number
-	args: [string, number][]
+export type OpcodeEncoderData = {
+	prefixBits: number
+	prefix: number
+	args: Record<string, ArgDesc>
+	argBits: number
 }
 
-type IndexedOpcodeData = OpcodeData & { opcode: number }
-
-export class ShortInstructionBytesCodec implements Codec<Instruction, Uint8Array> {
-	private readonly _shiftBits: number
-	private readonly _laneCountBits: number[]
-	private readonly _headerBits: number
-	private readonly _laneBits: number[][]
-	private readonly _opcodes: OpcodeData[][][]
-
-	private readonly _trees: DecoderTree[][]
+export class ShortInstructionBytesCodec implements Codec<ShortInstruction, Uint8Array> {
+	private _trees: DecoderQueueEntry[][]
+	private _headerBits: number
+	private _shiftBits: number
+	private _laneCountBits: number[]
+	private _encoderData: OpcodeEncoderData[][][]
+	private _shiftOffset: number
 
 	public constructor(
 		private readonly _desc: ShortDecoderDesc,
 		private readonly _ops: OperationDesc[],
 		private readonly _registerFiles: Record<RegisterFileName, RegisterFileDesc>,
 	) {
-		this._laneCountBits = this._desc.groups.map((lanes) => Math.ceil(Math.log2(lanes.length)))
-
-		const treeBase = this._desc.groups.map((lanes) => {
-			return lanes.map((laneOps) => {
-				const expandedLaneOps = laneOps.map((unitIndex) => {
-					assert(unitIndex >= 0 && unitIndex < this._ops.length)
-					return this._ops[unitIndex]
-				})
-
-				return createDecoderTree(expandedLaneOps, _registerFiles)
-			})
-		})
-
-		this._trees = treeBase.map((lanes) => lanes.map((lane) => lane.tree))
-
-		this._opcodes = this._trees.map((lanes) => {
-			return lanes.map((tree) => {
-				const data = this.getOpcodeData(tree)
-				const result: OpcodeData[] = []
-				data.forEach((op) => {
-					assert(!(op.opcode in result))
-					result[op.opcode] = op
-				})
-
-				return result
-			})
-		})
-
-		this._laneBits = this._opcodes.map((lanes) => {
-			return lanes.map((laneOps) => {
-				return laneOps.reduce((max, op) => {
-					return Math.max(max, op.width + op.args.reduce((sum, [_, bits]) => sum + bits, 0))
-				}, 0)
-			})
-		})
-
-		const maxBits = this._laneBits.reduce((sum, lanes) => {
-			return sum + lanes.reduce((sum, bits) => sum + bits, 0)
-		}, 0)
-
-		this._shiftBits = clog2(Math.ceil(maxBits / 8))
+		this._trees = this._desc.groups.map((lanes) => lanes.map((ops) => createDecoderTree(ops.map((op) => this._ops[op]), this._registerFiles)))
+		this._shiftBits = clog2(Math.ceil(getMaxBodyBits({ groups: this._trees }) / 8))
+		this._laneCountBits = this._desc.groups.map((lanes) => clog2(lanes.length))
 		this._headerBits = this._shiftBits + this._laneCountBits.reduce((sum, bits) => sum + bits, 0)
+
+		this._encoderData = this._desc.groups.map((lanes, groupIndex) => lanes.map((_, laneIndex) => {
+			const entry = this._trees[groupIndex][laneIndex]
+			const prefixes = this.getTreePrefixes(entry.tree)
+
+			const result: OpcodeEncoderData[] = []
+			prefixes.forEach((data, opcode) => {
+				result[opcode] = data
+			})
+
+			return result
+		}))
+
+		const minBits = this._headerBits + this._trees.reduce((sum, lanes) => sum + lanes[0].bits, 0)
+		this._shiftOffset = Math.ceil(minBits / 8)
 	}
 
-	public encodedBytes(instruction: Instruction): number {
+	private getTreePrefixes(tree: DecoderTree, prefix = 0, bits = 0): Map<number, OpcodeEncoderData> {
+		if ('opcode' in tree) {
+			return new Map([[tree.opcode, {
+				prefixBits: bits,
+				prefix,
+				args: tree.args,
+				argBits: Object.values(tree.args).reduce((sum, arg) => {
+					if ('immediateBits' in arg) {
+						return sum + arg.immediateBits
+					} else if ('registerFile' in arg) {
+						return sum + clog2(this._registerFiles[arg.registerFile].count)
+					} else {
+						return sum
+					}
+				}, 0),
+			}]])
+		}
+
+		const zero = this.getTreePrefixes(tree.zero, prefix << 1, bits + 1)
+		const one = this.getTreePrefixes(tree.one, (prefix << 1) | 1, bits + 1)
+
+		const result = new Map([...zero.entries(), ...one.entries()])
+		return result
+	}
+
+	public encodedBytes(instruction: ShortInstruction): number {
 		const bits = this._headerBits + instruction.groups.reduce((sum, lanes, groupIndex) => {
 			return sum + lanes.reduce((sum, _, laneIndex) => {
-				return sum + this._laneBits[groupIndex][laneIndex]
+				return sum + this._trees[groupIndex][laneIndex].bits
 			}, 0)
 		}, 0)
 
 		return Math.ceil(bits / 8)
 	}
 
-	public encode(instruction: Instruction): Uint8Array {
-		// Create output buffer
+	public encode(instruction: ShortInstruction): Uint8Array {
 		const buffer = new BufferedWritable()
 		const writer = new BitstreamWriter(buffer)
 
 		// Encode shift bytes
-		const shiftBytes = this.encodedBytes(instruction)
-		writer.write(this._shiftBits, shiftBytes - 1)
+		if (instruction.shiftBytes === undefined) {
+			instruction.shiftBytes = this.encodedBytes(instruction)
+		}
+
+		assert(instruction.shiftBytes >= this._shiftOffset, 'Shift bytes must be at least 1')
+		assert(instruction.shiftBytes - this._shiftOffset <= Math.pow(2, this._shiftBits), `Shift bytes out of range (${instruction.shiftBytes} > ${Math.pow(2, this._shiftBits)})`)
+		writer.write(this._shiftBits, instruction.shiftBytes - this._shiftOffset)
 
 		// Encode lane counts
-		assert(instruction.groups.length === this._desc.groups.length, `Invalid group count: ${instruction.groups.length} (expected ${this._desc.groups.length})`)
 		instruction.groups.forEach((lanes, groupIndex) => {
-			assert(lanes.length >= 1 && lanes.length <= this._desc.groups[groupIndex].length, `Invalid lane count: ${lanes.length} (expected 1-${this._desc.groups[groupIndex].length})`)
+			assert(lanes.length >= 1, 'No lanes in group')
+			assert(lanes.length <= this._desc.groups[groupIndex].length, 'Too many lanes in group')
+
 			writer.write(this._laneCountBits[groupIndex], lanes.length - 1)
 		})
 
-		// Encode operations
+		// Encode lanes
 		instruction.groups.forEach((lanes, groupIndex) => {
-			lanes.forEach((laneOp, laneIndex) => {
-				const startIndex = writer.offset
-				// Encode opcode
-				const { value, width, args } = this._opcodes[groupIndex][laneIndex][laneOp.opcode]
-				writer.write(width, value)
+			lanes.forEach((lane, laneIndex) => {
+				const beforeOffset = writer.offset
 
-				// Encode args
-				args.forEach(([argName, argWidth]) => {
-					const argValue = laneOp.args[argName]
-					writer.write(argWidth, argValue)
-				})
+				// Encode opcode
+				const encoderData = this._encoderData[groupIndex][laneIndex][lane.opcode]
+				writer.write(encoderData.prefixBits, encoderData.prefix)
 
 				// Encode padding
-				const paddingBits = this._laneBits[groupIndex][laneIndex] - width - args.reduce((sum, [_, bits]) => sum + bits, 0)
+				const paddingBits = this._trees[groupIndex][laneIndex].bits - encoderData.prefixBits - encoderData.argBits
 				writer.write(paddingBits, 0)
 
-				const writtenBits = writer.offset - startIndex
-				assert(writtenBits === this._laneBits[groupIndex][laneIndex], `Invalid encoded instruction size: ${writtenBits} (expected ${this._laneBits[groupIndex][laneIndex]})`)
+				// Encode args
+				Object.entries(encoderData.args).forEach(([name, arg]) => {
+					const value = lane.args[name]
+					assert(value !== undefined, `Missing argument ${name}`)
+
+					if ('immediateBits' in arg) {
+						assert(value >= 0 && value < Math.pow(2, arg.immediateBits), `Argument ${name} out of range`)
+						writer.write(arg.immediateBits, value)
+					} else if ('registerFile' in arg) {
+						const registerFile = this._registerFiles[arg.registerFile]
+						assert(value >= 0 && value < registerFile.count, `Argument ${name} out of range`)
+						writer.write(clog2(registerFile.count), value)
+					}
+				})
+
+				assert(writer.offset - beforeOffset === this._trees[groupIndex][laneIndex].bits, 'Incorrect number of bits written')
 			})
 		})
 
-		// Return output buffer
 		writer.end()
-		assert(buffer.buffer.length === shiftBytes, `Invalid encoded instruction size: ${buffer.buffer.length} (expected ${shiftBytes})\n${this._shiftBits}\n${this._laneCountBits}\n${this._laneBits}\n${JSON.stringify(instruction)}\n${JSON.stringify(this._desc)}\n${JSON.stringify(this._ops)}`)
+		assert(buffer.buffer.length === instruction.shiftBytes)
 		return buffer.buffer
 	}
 
-	public decode(data: Uint8Array): Instruction {
+	public decode(bytes: Uint8Array): ShortInstruction {
 		const reader = new BitstreamReader()
-		reader.addBuffer(data)
+		reader.addBuffer(bytes)
 
 		// Decode shift bytes
-		const shiftBytes = reader.readSync(this._shiftBits) + 1
-		assert(shiftBytes > 0)
+		const shiftBytes = reader.readSync(this._shiftBits) + this._shiftOffset
 
 		// Decode lane counts
 		const laneCounts = this._laneCountBits.map((bits) => reader.readSync(bits) + 1)
 
-		// Decode operations
+		assert(reader.offset === this._headerBits, 'Incorrect number of bits read')
+
+		// Decode lanes
 		const groups = laneCounts.map((laneCount, groupIndex) => {
 			return rangeMap(laneCount, (laneIndex) => {
-				assert(reader.isAvailable(this._laneBits[groupIndex][laneIndex]))
-
-				const startIndex = reader.offset
-
+				const beforeOffset = reader.offset
+				
 				// Decode opcode
-				let tree = this._trees[groupIndex][laneIndex]
+				const entry = this._trees[groupIndex][laneIndex]
+
+				let tree = entry.tree
 				while (!('opcode' in tree)) {
 					const bit = reader.readSync(1)
 					tree = bit ? tree.one : tree.zero
 				}
 
-				const { opcode } = tree
+				// Decode padding
+				const paddingBits = entry.bits - this._encoderData[groupIndex][laneIndex][tree.opcode].prefixBits - this._encoderData[groupIndex][laneIndex][tree.opcode].argBits
+				assert(reader.readSync(paddingBits) === 0)
 
 				// Decode args
-				const { args: argWidths, width: opcodeWidth } = this._opcodes[groupIndex][laneIndex][opcode]
-				const argEntries = argWidths.map(([name, width]) => {
-					return [name, reader.readSync(width)]
-				})
+				const args = Object.fromEntries(Object.entries(tree.args).flatMap(([name, arg]) => {
+					if ('immediateBits' in arg) {
+						const value = arg.immediateBits === 0 ? 0 : reader.readSync(arg.immediateBits)
+						return [[name, value]]
+					} else if ('registerFile' in arg) {
+						const registerFile = this._registerFiles[arg.registerFile]
+						const result = registerFile.count <= 1 ? 0 : reader.readSync(clog2(registerFile.count))
+						assert(result >= 0 && result < registerFile.count)
+						return [[name, result]]
+					} else {
+						return []
+					}
+				}))
 
-				// Skip padding
-				const paddingBits = this._laneBits[groupIndex][laneIndex] - opcodeWidth - argWidths.reduce((sum, [_, bits]) => sum + bits, 0)
-				if (paddingBits > 0) {
-					assert(reader.readSync(paddingBits) === 0)
-				}
-				assert(reader.offset - startIndex === this._laneBits[groupIndex][laneIndex], `Invalid decoded instruction size: ${reader.offset - startIndex} (expected ${this._laneBits[groupIndex][laneIndex]})`)
-				
-				// Pack results
+				assert(reader.offset - beforeOffset === entry.bits, 'Incorrect number of bits read')
+
 				return {
-					opcode,
-					args: Object.fromEntries(argEntries)
+					opcode: tree.opcode,
+					args,
 				}
 			})
 		})
-
-		return { groups, shiftBytes }
-	}
-
-	private getOpcodeData(tree: DecoderTree, value = 0, width = 0): IndexedOpcodeData[] {
-		if ('opcode' in tree) {
-			return [{
-				opcode: tree.opcode,
-				value,
-				width,
-				args: Object.entries(tree.args).flatMap(([name, desc]) => {
-					if ('immediateBits' in desc) {
-						return [[name, desc.immediateBits]]
-					} else if ('registerFile' in desc) {
-						return [[name, clog2(this._registerFiles[desc.registerFile].count)]]
-					}
-
-					return []
-				})
-			}]
-		}
-
-		return this.getOpcodeData(tree.zero, value << 1, width + 1).concat(this.getOpcodeData(tree.one, (value << 1) | 1, width + 1))
+		
+		return { shiftBytes, groups }
 	}
 }

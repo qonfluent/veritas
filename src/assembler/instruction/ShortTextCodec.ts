@@ -1,135 +1,110 @@
-import { Instruction } from '../../common/Assembly'
+import { ShortInstruction } from '../../common/Assembly'
 import { Codec } from '../../common/Codec'
-import { ShortDecoderDesc, OperationDesc, RegisterFileDesc, RegisterFileName } from '../../common/Processor'
+import { OperationDesc, RegisterFileDesc, ShortDecoderDesc } from '../../common/Processor'
 
-
-export class ShortInstructionTextCodec implements Codec<Instruction, string> {
+export class ShortInstructionTextCodec implements Codec<ShortInstruction, string> {
 	public constructor(
 		private readonly _desc: ShortDecoderDesc,
 		private readonly _ops: OperationDesc[],
-		private readonly _registerFiles: Record<RegisterFileName, RegisterFileDesc>,
+		private readonly _registerFiles: Record<string, RegisterFileDesc>,
 	) {}
 
-	public encode(instruction: Instruction): string {
-		const encodedOps = instruction.groups.map((lanes, groupIndex) => {
-			return lanes.map((laneOp, laneIndex) => {
-				const opcode = this._desc.groups[groupIndex][laneIndex][laneOp.opcode]
-				const op = this._ops[opcode]
+	public encode(instruction: ShortInstruction): string {
+		const result = instruction.groups.map((lanes, groupIndex) => {
+			const result = lanes.map((opVal, laneIndex) => {
+				const opcode: number = this._desc.groups[groupIndex][laneIndex][opVal.opcode]
+				const opBase: OperationDesc = this._ops[opcode]
+				const args = Object.entries(opBase.args).flatMap(([name, type]) => {
+					const val = opVal.args[name]
 
-				const args = Object.entries(laneOp.args).flatMap(([argName, argValue]) => {
-					const arg = op.args[argName]
-
-					if ('immediateBits' in arg) {
-						return [argValue.toString()]
-					} else if ('registerFile' in arg) {
-						return [`r${argValue}`]
-					} else if ('cache' in arg) {
-						return []
-					} else {
-						throw new Error(`Unknown arg type: ${JSON.stringify(arg)}`)
+					if ('immediateBits' in type) {
+						return [`${val}`]
+					} else if ('registerFile' in type) {
+						const prefix = this._registerFiles[type.registerFile].prefix
+						return [`${prefix}${val}`]
 					}
-				})
 
-				return `${op.opcode} ${args.join(' ')}`
+					return []
+				}).join(' ')
+				
+				return `${opBase.opcode} ${args}`
 			})
+
+			return `[${result.join(', ')}]`
 		})
 
-		return `[${encodedOps.map((lanes) => lanes.join(' | ')).join('] [')}]`
+		return `[${result.join(', ')}]`
 	}
 
-	public decode(text: string): Instruction {
-		// Validate outermost brackets
-		if (!(text[0] === '[' && text[text.length - 1] === ']')) {
-			throw new Error(`Invalid instruction, missing outer brackets: ${text}`)
+	public decode(text: string): ShortInstruction {
+		if (text[0] !== '[' || text[text.length - 1] !== ']') {
+			throw new Error(`Invalid instruction: ${text}, must be wrapped in []`)
 		}
 
 		// Split into groups
-		const baseGroups = text.slice(1, -1).split('] [')
-		if (baseGroups.length !== this._desc.groups.length) {
-			throw new Error(`Invalid number of groups, expected ${this._desc.groups.length}, got ${baseGroups.length} in:\n${text}`)
+		const groupsRaw = text.slice(1, text.length - 1).split('], [')
+
+		if (groupsRaw.length !== this._desc.groups.length) {
+			throw new Error(`Invalid instruction: ${text}, must have ${this._desc.groups.length} groups`)
 		}
 
-		// Split into lanes
-		const groups = baseGroups.map((lanes, groupIndex) => {
-			const baseLanes = lanes.split(' | ')
-			if (!(baseLanes.length >= 1 && baseLanes.length <= this._desc.groups[groupIndex].length)) {
-				throw new Error(`Invalid number of lanes, expected 1-${this._desc.groups[groupIndex].length}, got ${baseLanes.length} in:\n${text}`)
+		const groups = groupsRaw.map((group, groupIndex) => {
+			if (group[0] !== '[' || group[group.length - 1] !== ']') {
+				throw new Error(`Invalid group: ${group}, must be wrapped in []`)
 			}
 
-			return baseLanes.map((op, laneIndex) => {
-				// Extract opcode and args
-				const parts = op.split(' ')
-				const opcode = parts[0]
-				const args = parts.slice(1)
+			// Split into lanes
+			const lanesRaw = group.slice(1, group.length - 1).split(', ')
 
-				// Find opcode in op list
+			if (lanesRaw.length < 1 || lanesRaw.length > this._desc.groups[groupIndex].length) {
+				throw new Error(`Invalid group: ${group}, must have between 1 and ${this._desc.groups[groupIndex].length} lanes`)
+			}
+
+			return lanesRaw.map((lane, laneIndex) => {
+				const [opcode, ...args] = lane.split(' ')
 				const opIndex = this._ops.findIndex((op) => op.opcode === opcode)
-				if (opIndex === -1) {
-					throw new Error(`Unknown opcode: ${opcode}`)
-				}
-				
-				// Get op description
-				const opDesc = this._ops[opIndex]
+				const opBase = this._ops[opIndex]
+				const selectIndex = this._desc.groups[groupIndex][laneIndex].findIndex((op) => op === opIndex)
 
-				// Validate args
-				const argValues = Object.entries(opDesc.args).flatMap(([argName, argDesc], argIndex) => {
-					const arg = args[argIndex]
-
-					if (arg === undefined) {
-						throw new Error(`Missing arg: ${argName}`)
-					}
-
-					if ('immediateBits' in argDesc) {
-						// Validate value
-						const value = Number(arg)
-						if (!(value >= 0 && value < Math.pow(2, argDesc.immediateBits))) {
-							throw new Error(`Invalid immediate value ${arg} tried to pack into ${argDesc.immediateBits} bits`)
-						}
-
-						return [[argName, value]]
-					} else if ('registerFile' in argDesc) {
-						// Validate register file exists
-						const regFile = this._registerFiles[argDesc.registerFile]
-						if (regFile === undefined) {
-							throw new Error(`Unknown register file: ${argDesc.registerFile}`)
-						}
-
-						// Get prefix from register file
-						const expectedPrefix = regFile.prefix
-
-						// Validate prefix
-						if (!arg.startsWith(expectedPrefix)) {
-							throw new Error(`Invalid register prefix: ${arg}`)
-						}
-
-						// Validate value
-						const value = Number(arg.slice(expectedPrefix.length))
-						if (!(value >= 0 && value < regFile.count)) {
-							throw new Error(`Invalid register index: ${value}`)
-						}
-
-						return [[argName, value]]
-					} else if ('cache' in argDesc) {
-						return []
-					} else {
-						throw new Error(`Unknown arg type: ${JSON.stringify(argDesc)}`)
-					}
-				})
-				
-				const localOpIndex = this._desc.groups[groupIndex][laneIndex].findIndex((op) => op === opIndex)
-				if (localOpIndex === -1) {
-					throw new Error(`Invalid opcode ${opcode} in group ${groupIndex} lane ${laneIndex}. Valid opcodes: ${this._desc.groups[groupIndex][laneIndex].map((op) => this._ops[op].opcode).join(', ')}`)
+				if (!opBase) {
+					throw new Error(`Invalid opcode: ${opcode}, must be one of\n${this._ops.map((op) => op.opcode).join(', ')}`)
 				}
 
 				return {
-					opcode: localOpIndex,
-					args: Object.fromEntries(argValues),
+					opcode: selectIndex,
+					args: Object.fromEntries(Object.entries(opBase.args).flatMap(([name, type], index) => {
+						const arg = args[index]
+
+						if ('immediateBits' in type) {
+							const result = parseInt(arg)
+
+							if (!Number.isSafeInteger(result) || result < 0 || result >= 2 ** type.immediateBits) {
+								throw new Error(`Invalid immediate: ${arg}, must be an integer between 0 and ${2 ** type.immediateBits - 1}`)
+							}
+
+							return [[name, result]]
+						} else if ('registerFile' in type) {
+							const file = this._registerFiles[type.registerFile]
+							const prefix = file.prefix
+							if (!arg.startsWith(prefix)) {
+								throw new Error(`Invalid register: ${arg}, must start with ${prefix}`)
+							}
+
+							const result = parseInt(arg.slice(prefix.length))
+
+							if (!Number.isSafeInteger(result) || result < 0 || result >= file.count) {
+								throw new Error(`Invalid register: ${arg}, must be between ${prefix}0 and ${prefix}${file.count - 1}`)
+							}
+
+							return [[name, result]]
+						}
+
+						return []
+					})),
 				}
 			})
 		})
 
-		return {
-			groups,
-		}
+		return { groups }
 	}
 }

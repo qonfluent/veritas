@@ -88,7 +88,7 @@ export function createWideDecoderTree(desc: WideDecoderDesc): Module {
 					// Set shift bytes
 					['=', 'shift_bytes', ['slice', 'instruction', 0, shiftBits]],
 
-					// Set valid and opcode
+					// Set valid, opcode, and arg counts
 					...desc.lanes.flatMap<Stmt>((_, laneIndex) => [
 						['=', `valid_${laneIndex}`, ['&&', 'valid', ['>=', laneIndex, ['slice', 'instruction', shiftBits, countBits]]]],
 						['=', `opcode_${laneIndex}`, ['slice', 'instruction', opcodeOffset[laneIndex], opcodeBits[laneIndex]]],
@@ -96,6 +96,9 @@ export function createWideDecoderTree(desc: WideDecoderDesc): Module {
 							['=', `argCount_${laneIndex}_${groupIndex}`, ['slice', 'instruction', opcodeOffset[laneIndex] + opcodeBits[laneIndex] + argCountOffset[groupIndex], argCountBits[groupIndex]]],
 						]),
 					]),
+
+					// --- CYCLE 2+ ---
+					
 				]],
 			]]
 		]

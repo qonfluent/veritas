@@ -4,7 +4,7 @@ import { rangeMap } from '../../src/common/Util'
 import { randomDecoderDesc, randomInstruction, randomOperationDesc } from '../Common'
 
 describe('Instruction codec', () => {
-	it('should encode and decode instructions', () => {
+	it('should encode and decode short ninstructions', () => {
 		const desc = {
 			groups: [
 				[
@@ -71,20 +71,33 @@ describe('Instruction codec', () => {
 			],
 		}
 
-		{
+		let encoded, decoded
+		try {
 			const codec = new ShortInstructionTextCodec(desc, ops, registerFiles)
-			const encoded = codec.encode(instruction)
-			const decoded = codec.decode(encoded)
+			encoded = codec.encode(instruction)
+			decoded = codec.decode(encoded)
 
 			expect(decoded).toEqual(instruction)
+		} catch (e) {
+			console.log(JSON.stringify(instruction))
+			console.log(JSON.stringify(encoded))
+			console.log(JSON.stringify(decoded))
+			throw e
 		}
 		
-		{
+		try {
 			const codec = new ShortInstructionBytesCodec(desc, ops, registerFiles)
 			const encoded = codec.encode(instruction)
 			const decoded = codec.decode(encoded)
 
+			console.log(`Decoded: ${JSON.stringify(decoded)}`)
+
 			expect(decoded).toEqual({ ...instruction, shiftBytes: 4 })
+		} catch (e) {
+			console.log(JSON.stringify(instruction))
+			console.log(JSON.stringify(encoded))
+			console.log(JSON.stringify(decoded))
+			throw e
 		}
 	})
 
@@ -101,16 +114,18 @@ describe('Instruction codec', () => {
 		const TEST_COUNT = 10_000
 		for (let i = 0; i < TEST_COUNT; i++) {
 			const instruction = randomInstruction(desc, ops, registerFiles)
+			
 			const encoded = textCodec.encode(instruction)
 			const decoded = textCodec.decode(encoded)
+
 			expect(decoded).toEqual(instruction)
 
 			const encodedBytes = bytesCodec.encode(instruction)
-			const expectedShiftBytes = bytesCodec.encodedBytes(instruction)
-			expect(encodedBytes.length === expectedShiftBytes)
+			const expectedBytes = bytesCodec.encodedBytes(instruction)
+			expect(encodedBytes.length === expectedBytes)
 
 			const decodedBytes = bytesCodec.decode(encodedBytes)
-			expect(decodedBytes).toEqual({ ...instruction, shiftBytes: expectedShiftBytes })
+			expect(decodedBytes).toEqual({ ...instruction, shiftBytes: expectedBytes })
 		}
 	})
 })
