@@ -2,6 +2,7 @@ import { Module } from "../hdl/HDL"
 
 export type FieldName = string
 export type UnitName = string
+export type OperationId = string
 export type RegisterFileName = string
 export type CacheName = string
 
@@ -75,7 +76,7 @@ export type CacheHierarchyDesc = {
 }
 
 export type UnitDesc = {
-	opcode: string
+	opId: OperationId
 	module: Module
 	crossfeeds: Record<UnitName, Record<FieldName, number>>
 	latency: number
