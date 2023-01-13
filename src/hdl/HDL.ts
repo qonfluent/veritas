@@ -1,3 +1,4 @@
+// Language
 export type SignalName = string
 export type SignalWidth = number
 
@@ -11,7 +12,7 @@ export type LExpr = VarExpr | IndexLExpr | SliceLExpr | ConcatLExpr
 
 export type UnaryOp = '!' | '~' | '-' | '+' | '|' | '&' | '^' | '~|' | '~&' | '~^'
 export type BinaryOp = '|' | '&' | '^' | '~|' | '~&' | '~^' | '==' | '!=' | '<' | '<=' | '>' | '>=' | '<<' | '>>' | '+' | '-' | '*' | '/' | '%'
-export type ConstExpr = number | bigint
+export type ConstExpr = number | bigint | [number, number | bigint]
 export type UnaryExpr = [UnaryOp, RExpr]
 export type BinaryExpr = [BinaryOp, RExpr, RExpr]
 export type TernaryExpr = ['?', RExpr, RExpr, RExpr]
@@ -23,14 +24,11 @@ export type RExpr = LExpr | ConstExpr | UnaryExpr | BinaryExpr | TernaryExpr | I
 export type AssignmentStmt = ['=', LExpr, RExpr]
 export type IfStmt = ['if', RExpr, Stmt[], Stmt[]?]
 export type RangeMapStmt = ['rangeMap', VarExpr, RExpr, Stmt[]]
-export type Stmt = AssignmentStmt | IfStmt | RangeMapStmt
+export type SignalStmt = ['signal', VarExpr, Signal, { direction?: 'input' | 'output' | 'inout', type?: 'tri' | 'wor' | 'wand' }?]
+export type ClockedStmt = ['on', 'posedge' | 'negedge', VarExpr, Stmt[]]
+export type Stmt = AssignmentStmt | IfStmt | RangeMapStmt | SignalStmt | ClockedStmt
 
-export type Module = {
-	clocks: SignalName[]
-	inputs: Record<SignalName, Signal>
-	outputs: Record<SignalName, Signal>
-	internals: Record<SignalName, Signal>
+export type Module = Stmt[]
 
-	unclocked: Stmt[]
-	clocked: Record<SignalName, Stmt[]>
-}
+// Values
+export type SignalValue = [number, bigint] | SignalValue[] | { [key: SignalName]: SignalValue }
