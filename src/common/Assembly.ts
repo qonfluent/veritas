@@ -1,5 +1,5 @@
 import { SignalValue } from '../hdl/HDL'
-import { FieldName } from './Processor'
+import { DecoderFieldDesc, FieldName } from './Processor'
 
 export type RegisterIndex = number
 
@@ -15,4 +15,22 @@ export type Instruction = {
 } | {
 	extra?: SignalValue
 	groups: InstructionGroup[]
+}
+
+export type OperationDesc = {
+	opcode: string
+	args: DecoderFieldDesc[]
+}
+
+export type Operation = {
+	opcode: string
+	args: InstructionField[]
+}
+
+export type Block = {
+	operations: Operation[]
+}
+
+export type Program = {
+	blocks: Block[]
 }

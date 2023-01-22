@@ -1,2 +1,12 @@
-// Given an operation DAG, this class generates a sequence of operations
-// packed to fit the hardware
+import { Instruction, Program } from '../common/Assembly'
+import { CoreDesc } from '../common/Processor'
+
+export function sequenceProgram(program: Program, target: CoreDesc): Instruction[] {
+	const result: Instruction[] = []
+
+	program.blocks.forEach((block) => {
+		
+	})
+
+	return result
+}

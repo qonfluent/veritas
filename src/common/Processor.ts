@@ -1,4 +1,4 @@
-import { Module, Signal, SignalName } from "../hdl/HDL"
+import { Module, Signal } from "../hdl/HDL"
 
 export type FieldName = string
 export type UnitName = string
@@ -25,7 +25,7 @@ export type DecoderFieldDescImmediate = DecoderFieldDescHeader & {
 export type DecoderFieldDescRegister = DecoderFieldDescHeader & {
 	type: 'register'
 	dir: 'input' | 'output' | 'inout'
-	file: RegisterFileName
+	registerFile: RegisterFileName
 	staticIndex?: number
 }
 
