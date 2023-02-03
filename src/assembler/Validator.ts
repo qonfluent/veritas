@@ -1,6 +1,7 @@
 import { Instruction } from '../common/Assembly'
 import { CoreDesc, DecoderDesc, RegisterFileDesc } from '../common/Processor'
 import { clog2 } from '../common/Utils'
+import { Signal, SignalValue } from '../hdl/HDL'
 
 export function getInvalidCount(target: DecoderDesc, registerFiles: RegisterFileDesc[]): number {
 	if (target.invalidHandler === undefined) {
@@ -86,11 +87,70 @@ export function getInvalidCount(target: DecoderDesc, registerFiles: RegisterFile
 	return result
 }
 
+export function validateExtraSignals(value: SignalValue, expected: Signal): void {
+	if (typeof expected === 'number') {
+		if (!(value instanceof Array) || value.length !== 2 || typeof value[0] !== 'number' || typeof value[1] !== 'bigint') {
+			throw new Error(`Expected [bits, value] for extra signal, got ${value}`)
+		}
+		
+		if (value[0] !== expected) {
+			throw new Error(`Expected ${expected} bits for extra signal, got ${value[0]}`)
+		}
+
+		if (value[1] >= (1n << BigInt(expected))) {
+			throw new Error(`Expected value of ${expected} bits for extra signal, got ${value[1]}`)
+		}
+	} else if (expected instanceof Array) {
+		if (!(value instanceof Array)) {
+			throw new Error(`Expected array for extra signal, got ${value}`)
+		}
+
+		const [type, ...dims] = expected
+
+		if (dims.length === 0) {
+			throw new Error(`Expected array with dimensions for extra signal, got ${expected}`)
+		}
+		
+		if (dims.length === 1) {
+			if (value.length !== dims[0]) {
+				throw new Error(`Expected array of length ${dims[0]} for extra signal, got ${value}`)
+			}
+
+			value.forEach((v) => validateExtraSignals(v, type))
+		}
+
+		value.forEach((v) => validateExtraSignals(v, [type, ...dims.slice(1)]))
+	} else {
+		if (typeof value !== 'object' || value === null) {
+			throw new Error(`Expected object for extra signal, got ${value}`)
+		}
+
+		const entires = Object.entries(expected)
+		entires.forEach(([name, type]) => {
+			if (!(name in value)) {
+				throw new Error(`Expected extra signal ${name} to be present`)
+			}
+
+			validateExtraSignals(value[name], type)
+		})
+	}
+}
+
 export function validate(program: Instruction[], target: DecoderDesc, registerFiles: RegisterFileDesc[]): void {
 	const invalidCount = getInvalidCount(target, registerFiles)
-	program.forEach((instruction) => {
+	program.forEach((instruction, line_number) => {
 		if ('invalid' in instruction) {
+			if (instruction.invalid >= invalidCount) {
+				throw new Error(`Invalid instruction ${instruction.invalid} >= ${invalidCount} (invalid instruction encoding)`)
+			}
+		} else {
+			if (target.extraSignals !== undefined) {
+				if (instruction.extra === undefined) {
+					throw new Error(`Target has extra signals but none were provided in instruction: ${target.extraSignals}\nLine: ${line_number}`)
+				}
 
+				validateExtraSignals(instruction.extra, target.extraSignals)
+			}
 		}
 	})
 }
