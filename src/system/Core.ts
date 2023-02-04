@@ -1,172 +1,185 @@
-import assert from "assert"
-
-// This forms the lowest level of the system, the core syntax. The core syntax is designed to be a superset of all other
-// syntaxes, and is used to define the syntaxes of other systems. The core syntax is also used to define the syntax of
-// the system itself, which is used to define the syntax of other systems. This is a recursive definition, which is
-// why the core syntax is defined togethere here.
-
-// Generic syntax value, which is required to have at least a text and bytes representation
-// as well as a type, which is defined later
-export interface SyntaxValue {
-	get type(): SyntaxType
-	get text(): TextValue
-	get bytes(): BytesValue
+export enum Tag {
+	Text,
+	Command,
+	Seq,
 }
 
-// A symbol is an uninterpreted value. It has a name and a type, 
-export class Symbol implements SyntaxValue {
+export class Value {
 	public constructor(
-		private readonly _name: string,
-		private readonly _type: SyntaxType = SyntaxTags.Symbol,
+		public readonly tag: Tag,
+	) {}
+}
+
+export class TextValue extends Value {
+	public constructor(
+		public readonly text: string,
+	) {
+		super(Tag.Text)
+	}
+}
+
+export class Paren {
+	public constructor(
+		public readonly open: string,
+		public readonly value: Value,
+		public readonly close: string,
+	) {}
+}
+
+export class CommandValue extends Value {
+	public constructor(
+		public readonly command: string | Paren,
+		public readonly args: Paren[],
+	) {
+		super(Tag.Command)
+	}
+}
+
+export class SeqValue extends Value {
+	public constructor(
+		public readonly values: (TextValue | CommandValue)[],
+	) {
+		super(Tag.Seq)
+	}
+}
+
+export type Cursor = {
+	text: string
+	index: number
+}
+
+export class TextParser {
+	public constructor(
+		public readonly commandSymbol: string,
+		public readonly spaces: string[],
+		public readonly seperators: string[],
+		public readonly parens: [string, string, Tag][],
 	) {}
 
-	public get name(): string {
-		return this._name
+	public parse(text: string): Value {
+		// Create a cursor to track our position in the text
+		const cursor = { text, index: 0 }
+
+		// Parse the text
+		const result: (TextValue | CommandValue)[] = []
+		while (cursor.index < cursor.text.length) {
+			// Parse a text value stopping on the command symbol
+			const preText = this.parseUntil(cursor, [this.commandSymbol])
+			if (preText.length > 0) {
+				result.push(new TextValue(preText))
+			}
+
+			// Parse a command
+			if (cursor.index < cursor.text.length) {
+				if (cursor.text.startsWith(this.commandSymbol, cursor.index)) {
+					cursor.index += this.commandSymbol.length
+					result.push(this.parseCommand(cursor))
+				}
+			}
+		}
+
+		if (result.length === 1) {
+			return result[0]
+		}
+
+		return new SeqValue(result)
 	}
 
-	public get type(): SyntaxType {
-		return this._type
+	private parseCommand(cursor: Cursor): CommandValue {
+		// Check for a paren
+		let command: Paren | string | undefined = this.parseParen(cursor)
+		if (command === undefined) {
+			// Parse a symbol
+			command = this.parseUntil(cursor, this.spaces.concat(this.parens.flatMap(p => [p[0], p[1]])))
+		}
+
+		// Parse the arguments
+		const args: Paren[] = []
+		while (cursor.index < cursor.text.length) {
+			// Parse next argument
+			const arg = this.parseParen(cursor)
+			if (arg === undefined) {
+				break
+			}
+			args.push(arg)
+		}
+
+		return new CommandValue(command, args)
 	}
 
-	public get text(): TextValue {
-		return new TextValue(this._name)
+	private parseParen(cursor: Cursor): Paren | undefined {
+		// Check for a paren
+		// NOTE: This requires that the parens be sorted by length from longest to shortest
+		const paren = this.parens.find(p => cursor.text.startsWith(p[0], cursor.index))
+		if (paren === undefined) {
+			return undefined
+		}
+
+		// Parse the paren
+		cursor.index += paren[0].length
+		const text = this.parseUntilBalanced(cursor, paren[1])
+
+		switch (paren[2]) {
+			case Tag.Text: {
+				return new Paren(paren[0], new TextValue(text), paren[1])
+			}
+			case Tag.Command:
+			case Tag.Seq: {
+				return new Paren(paren[0], this.parse(text), paren[1])
+			}
+		}
 	}
 
-	public get bytes(): BytesValue {
-		throw new Error('Not yet implemented')
+	private findNext(cursor: Cursor, stop: string[]): number {
+		return stop.reduce((min, stop) => {
+			const index = cursor.text.indexOf(stop, cursor.index)
+			return index < min ? index : min
+		}, cursor.text.length)
+	}
+
+	private parseUntil(cursor: Cursor, stop: string[]): string {
+		const stopIndex = this.findNext(cursor, stop)
+		if (stopIndex !== -1) {
+			const text = cursor.text.substring(cursor.index, stopIndex)
+			cursor.index = stopIndex
+			return text
+		}
+
+		const text = cursor.text.substring(cursor.index)
+		cursor.index = cursor.text.length
+		return text
+	}
+
+	private parseUntilBalanced(cursor: Cursor, stop: string): string {
+		const startParens = this.parens.map(p => p[0])
+		const endParens = this.parens.map(p => p[1])
+
+		const stack = [stop]
+		const startIndex = cursor.index
+		while (cursor.index < cursor.text.length && stack.length > 0) {
+			// Look for the next start
+			const startIndex = this.findNext(cursor, startParens)
+			if (startIndex < cursor.index) {
+				// Found a start
+				const paren = this.parens.find(p => cursor.text.startsWith(p[0], startIndex))
+				if (paren === undefined) {
+					throw new Error('Invalid state')
+				}
+
+				// Push the end onto the stack
+				stack.push(paren[1])
+				cursor.index = startIndex + paren[0].length
+			}
+
+			// Look for the next end
+			const endIndex = this.findNext(cursor, stack)
+			if (endIndex < cursor.index) {
+				// Found an end
+				stack.pop()
+				cursor.index = endIndex + stack[stack.length - 1].length
+			}
+		}
+
+		return cursor.text.substring(startIndex, cursor.index)
 	}
 }
-
-// A symbol used to tag syntax types
-export class SyntaxType extends Symbol {
-	public constructor(
-		name: string,
-		private readonly _encoder: TextEncoderValue = TextEncoderValue.DefaultTextEncoder,
-	) {
-		super(name, SyntaxTags.SyntaxType)
-	}
-}
-
-export class TextEncoderValue extends Symbol {
-	public static readonly DefaultTextEncoder = new TextEncoderValue('Core.TextEncoder.Default')
-
-	public constructor(
-		name: string,
-	) {
-		super(name, SyntaxTags.TextEncoder)
-	}
-
-	public encode(text: string): Uint8Array {
-		return new TextEncoder().encode(text)
-	}
-
-	public decode(bytes: Uint8Array): string {
-		return new TextDecoder().decode(bytes)
-	}
-}
-
-// A text value is a string of characters with a known encoding
-export class TextValue implements SyntaxValue {
-	public constructor(
-		private readonly _text: string,
-		private readonly _encoding: TextEncoderValue = TextEncoderValue.DefaultTextEncoder,
-	) {
-	}
-
-	public get value(): string {
-		return this._text
-	}
-
-	public get type(): SyntaxType {
-		return SyntaxTags.Text
-	}
-
-	public get text(): TextValue {
-		return this
-	}
-
-	public get bytes(): BytesValue {
-		throw new Error('Not yet implemented')
-	}
-}
-
-// A bytes value is a sequence of bytes
-export class BytesValue implements SyntaxValue {
-	public constructor(
-		private readonly _bytes: Uint8Array,
-	) {}
-
-	public get value(): Uint8Array {
-		return this._bytes
-	}
-
-	public get type(): SyntaxType {
-		return SyntaxTags.Bytes
-	}
-
-	public get text(): TextValue {
-		return new TextValue(this._bytes.toString())
-	}
-
-	public get bytes(): BytesValue {
-		return this
-	}
-
-	public get length(): number {
-		return this._bytes.length
-	}
-
-	public toString(): string {
-		return Buffer.from(this._bytes).toString('hex')
-	}
-}
-
-// The tags for the core syntax types, recorded in one place for easy reference
-export class SyntaxTags {
-	public static readonly SyntaxType = new SyntaxType('Core.SyntaxType')
-	public static readonly TextEncoder = new SyntaxType('Core.TextEncoder')
-	public static readonly Symbol = new SyntaxType('Core.Symbol')
-	public static readonly Text = new SyntaxType('Core.Text')
-	public static readonly Bytes = new SyntaxType('Core.Bytes')
-}
-
-// NOTE: The TextValue and BytesValue types are provided for small values. For large values, we should use a
-// streaming interface and display the first few bytes of the value as a preview, and provide a different
-// interface for viewing the full value. That is outside the scope of this file, which is just for the core
-
-// 
-// With the types for symbol, text, and byte constants in place, we can define the core syntax. The core syntax is designed
-// to allow for easy marking of documents to switch between languages, and to allow for easy embedding of other languages and
-// syntaxes within the core syntax. The core syntax is designed to be a superset of all other syntaxes, and to be able to
-// represent any other syntax as a subset of the core syntax.
-//
-// The Core syntax is defined as follows:
-// Expression = '@' <Term> <FollowingTerm>*
-//
-// ConstTerm = <Symbol> | <TextValue> | <BytesValue>
-// CompoundTerm = <CompoundTag> (<Term> ','?)* <CompoundUntag>
-// DynamicTerm = '{' (.*) '}'
-//
-// Term = <ConstTerm> | <CompoundTerm> | <DynamicTerm>
-
-
-
-
-
-
-
-
-
-// A type system consists of five judgments:
-// 1. Gamma in Ctx      (Context definition)
-// 2. Gamma |- A : Type (Type definition)
-// 3. Gamma |- A = B		(Type equality)
-// 4. Gamma |- M : A		(Term definition)
-// 5. Gamma |- M = N		(Term equality)
-
-// We reduce this by noting the following:
-// 1. A = B : Type -- This can unify 2 with 3 by using the alpha equal term A and B on each side of the equality
-// 2. a = b : A -- Same for 4 and 5
-// 3. All judgements can have the context embedded directly, so we can remove 1, leaving two judgements total
-// 4. Finally, we embed terms in types and make a special Type symbol to represent the type of types
-// 5, This leaves out some questions about recursion, but we can handle that later
