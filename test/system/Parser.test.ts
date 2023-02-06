@@ -10,6 +10,10 @@ describe('Document Parser', () => {
 		spaces: [' ', '\t'],
 		newlines: ['\n', '\r'],
 		parens: [['(', ')'], ['[', ']'], ['{', '}']],
+		symbolForbidden: {
+			start: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+			rest: [],
+		},
 	}
 
 	const parser = new DocumentParser(opts)
@@ -316,6 +320,21 @@ describe('Document Parser', () => {
 				assert(result?.nodes[2].args[0].document.nodes[0] instanceof TextNode)
 				expect(result?.nodes[2].args[0].document.nodes[0].text).toBe(' Hello World ')
 			})
+
+			it('Actually multiline comments', () => {
+				const cursor = new TextCursor('@;{\nHello World\non multiple lines\n}')
+				const result = parser.parse(cursor)
+				expect(result).not.toBeUndefined()
+				expect(result?.nodes).toHaveLength(1)
+				assert(result?.nodes[0] instanceof CommandNode)
+				expect(result?.nodes[0].command).toBe(';')
+				expect(result?.nodes[0].args).toHaveLength(1)
+				expect(result?.nodes[0].args[0].open).toBe('{')
+				expect(result?.nodes[0].args[0].close).toBe('}')
+				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
+				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
+				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe('\nHello World\non multiple lines\n')
+			})
 		})
 
 		describe('Single line and multi line comments', () => {
@@ -395,6 +414,41 @@ describe('Document Parser', () => {
 				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
 				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe(' World ')
 			})
+		})
+	})
+
+	describe('Complex text', () => {
+		it('Can handle complex text', () => {
+			const cursor = new TextCursor('Hello {{420}}]]][[()]{]]{}{{}')
+			const result = parser.parse(cursor)
+			expect(result).not.toBeUndefined()
+			expect(result?.nodes).toHaveLength(1)
+			assert(result?.nodes[0] instanceof TextNode)
+			expect(result?.nodes[0].text).toBe('Hello {{420}}]]][[()]{]]{}{{}')
+		})
+
+		it('Can handle complex text with a command', () => {
+			const cursor = new TextCursor('Hello {{@world}} {]][[} ]]@whatever][((]))')
+			const result = parser.parse(cursor)
+			expect(result).not.toBeUndefined()
+			expect(result?.nodes).toHaveLength(5)
+			assert(result?.nodes[0] instanceof TextNode)
+			expect(result?.nodes[0].text).toBe('Hello {{')
+			assert(result?.nodes[1] instanceof CommandNode)
+			expect(result?.nodes[1].command).toBe('world')
+			expect(result?.nodes[1].args).toHaveLength(0)
+			assert(result?.nodes[2] instanceof TextNode)
+			expect(result?.nodes[2].text).toBe('}} {]][[} ]]')
+			assert(result?.nodes[3] instanceof CommandNode)
+			expect(result?.nodes[3].command).toBe('whatever')
+			expect(result?.nodes[3].args).toHaveLength(0)
+			assert(result?.nodes[4] instanceof TextNode)
+			expect(result?.nodes[4].text).toBe('][((]))')
+		})
+
+		it('Should reject numerical symbols', () => {
+			const cursor = new TextCursor('Hello @1234')
+			expect(() => parser.parse(cursor)).toThrow()
 		})
 	})
 })

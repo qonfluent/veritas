@@ -7,6 +7,10 @@ export type ParserOptions = {
 	readonly spaces: string[]
 	readonly newlines: string[]
 	readonly parens: [string, string][]
+	readonly symbolForbidden: {
+		readonly start: string[]
+		readonly rest: string[]
+	}
 }
 
 export interface SyntaxParser {
@@ -91,6 +95,16 @@ export class CommandParser implements SyntaxParser {
 		// Parse the command symbol, stop at command, comment, space, newline, or paren
 		const symbolStops = [this.opts.command, this.opts.comment, ...this.opts.spaces, ...this.opts.newlines, ...this.opts.parens.flat()]
 		const symbol = cursor.parseUntil(symbolStops)
+
+		// Check if symbol starts with a forbidden character
+		if (this.opts.symbolForbidden.start.some((char) => symbol.startsWith(char))) {
+			throw new Error()
+		}
+
+		// Check if symbol contains a forbidden character
+		if (this.opts.symbolForbidden.rest.some((char) => symbol.slice(1).includes(char))) {
+			throw new Error()
+		}
 		
 		// Parse the command args
 		const argParser = new ArgParser(this.opts)
