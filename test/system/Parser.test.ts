@@ -1,496 +1,279 @@
-import assert from 'assert'
-import { CommandNode, TextNode } from '../../src/system/AST'
-import { TextCursor } from '../../src/system/Cursor'
-import { DocumentParser, ParserOptions } from '../../src/system/Parser'
+export type Symbol = string
+export type Text = string
+export type Body = Text | Command | Arg
+export type Arg = [string, Body[], string]
+export type Command = [Symbol, ...Arg[]]
+export type Document = (Command | Text)[]
 
-describe('Document Parser', () => {
-	const opts: ParserOptions = {
-		command: '@',
-		comment: ';',
-		spaces: [' ', '\t'],
-		newlines: ['\n', '\r'],
-		parens: [['(', ')'], ['[', ']'], ['{', '}']],
-		symbolForbidden: {
-			start: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
-			rest: [],
+export type ParserOptions = {
+	command: string
+	comment: string
+	spaces: string[]
+	newlines: string[]
+	parens: [string, string][]
+}
+
+export type TextCursor = {
+	text: string
+	index: number
+}
+
+export class DocumentParser {
+	public constructor(
+		public readonly options: ParserOptions = {
+			command: '@',
+			comment: ';',
+			spaces: [' ', '\t'],
+			newlines: ['\r', '\n'],
+			parens: [['(', ')'], ['[', ']'], ['{', '}']],
 		},
+	) {}
+
+	// Document = (Command / Text)*
+	public textDoc(cursor: TextCursor): Document {
+		const doc: Document = []
+		while (cursor.index < cursor.text.length) {
+			const comment = this.textComment(cursor)
+			if (comment) {
+				doc.push(comment)
+				continue
+			}
+			
+			const command = this.textCommand(cursor)
+			if (command) {
+				doc.push(command)
+				continue
+			}
+
+			const text = this.textText(cursor)
+			if (text) {
+				doc.push(text)
+				continue
+			}
+
+			break
+		}
+
+		return doc
 	}
 
-	const parser = new DocumentParser(opts)
+	// Text = [^@]+
+	public textText(cursor: TextCursor): Text | undefined {
+		const index = cursor.text.indexOf(this.options.command, cursor.index)
+		if (index === -1) {
+			const text = cursor.text.slice(cursor.index)
+			cursor.index = cursor.text.length
+			return text
+		}
 
-	describe('Simple text', () => {
-		it('Can parse a blank document', () => {
-			const cursor = new TextCursor('')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(0)
-		})
+		const text = cursor.text.slice(cursor.index, index)
+		cursor.index = index
+		return text
+	}
 
-		it('Can parse a document with a single text node', () => {
-			const cursor = new TextCursor('Hello')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(1)
-			assert(result?.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].text).toBe('Hello')
-		})
+	// Comment = '@;' ![({[] [^\n\r]*
+	public textComment(cursor: TextCursor): Command | undefined {
+		// Check if it is a comment
+		if (!cursor.text.startsWith(this.options.command + this.options.comment, cursor.index)) {
+			return undefined
+		}
+
+		// Check if it is a single line comment
+		if (this.options.parens.some(([open]) => cursor.text.startsWith(open, cursor.index))) {
+			return undefined
+		}
+
+		// Skip the comment tag
+		cursor.index += this.options.command.length + this.options.comment.length
+
+		// Find the end of the comment
+		const index = Math.min(cursor.text.length, ...this.options.newlines.map((newline) => cursor.text.indexOf(newline, cursor.index)).filter((index) => index !== -1))
+
+		// Create the comment
+		const comment = cursor.text.slice(cursor.index, index)
+		cursor.index = index
+
+		return [this.options.comment, ['', [comment], '']]
+	}
+
+	// Command = '@' s:Symbol? a:Arg* ![({[]
+	public textCommand(cursor: TextCursor): Command | undefined {
+		const start = cursor.index
+
+		// Read command tag
+		if (!cursor.text.startsWith(this.options.command, cursor.index)) {
+			return undefined
+		}
+
+		cursor.index += this.options.command.length
+
+		// Read symbol
+		const symbol = this.textSymbol(cursor)
+
+		// Read args
+		const args: Arg[] = []
+		while (cursor.index < cursor.text.length) {
+			const arg = this.textArg(cursor)
+			if (arg) {
+				args.push(arg)
+				continue
+			}
+
+			break
+		}
+
+		// Make sure the command is not followed by an open paren
+		// NOTE: This is to prevent strange behavior when a command is followed by unbalanced parens
+		if (this.options.parens.some(([open]) => cursor.text.startsWith(open, cursor.index))) {
+			cursor.index = start
+			return undefined
+		}
+
+		return [symbol, ...args]
+	}
+
+	// Symbol = [^@ \t\n\r(){}\[\]]+
+	public textSymbol(cursor: TextCursor): Symbol {
+		const start = cursor.index
+		const stops = [this.options.command, ...this.options.spaces, ...this.options.newlines, ...this.options.parens.flat()]
+		const stopIndex = Math.min(cursor.text.length, ...stops.map((stop) => cursor.text.indexOf(stop, cursor.index)).filter((index) => index !== -1))
+		const symbol = cursor.text.slice(cursor.index, stopIndex)
+		cursor.index = stopIndex
+		return symbol
+	}
+
+	// Arg = &[({[] '(' Body ')' / '[' Body ']' / '{' Body '}'
+	public textArg(cursor: TextCursor): Arg | undefined {
+		const start = cursor.index
+
+		if (!this.options.parens.some(([open]) => cursor.text.startsWith(open, cursor.index))) {
+			return undefined
+		}
+
+		for (const [open, close] of this.options.parens) {
+			// Read open paren
+			if (!cursor.text.startsWith(open, cursor.index)) {
+				continue
+			}
+
+			cursor.index += open.length
+
+			// Read body
+			const body = this.textBody(cursor)
+
+			// Read close paren
+			if (!cursor.text.startsWith(close, cursor.index)) {
+				cursor.index = start
+				continue
+			}
+
+			cursor.index += close.length
+
+			return [open, body, close]
+		}
+
+		return undefined
+	}
+
+	// Body = body:($[^@(){}\[\]]+ / Command / Arg)*
+	public textBody(cursor: TextCursor): Body[] {
+		const body: Body[] = []
+		while (cursor.index < cursor.text.length) {
+			const text = this.textBodyText(cursor)
+			if (text) {
+				body.push(text)
+				continue
+			}
+
+			const command = this.textCommand(cursor)
+			if (command) {
+				body.push(command)
+				continue
+			}
+
+			const arg = this.textArg(cursor)
+			if (arg) {
+				body.push()
+				continue
+			}
+
+			break
+		}
+
+		return body
+	}
+
+	// Text = [^@(){}\[\]]+
+	public textBodyText(cursor: TextCursor): Text | undefined {
+		const stops = [this.options.command, ...this.options.parens.flat()]
+		const stopIndex = Math.min(cursor.text.length, ...stops.map((stop) => cursor.text.indexOf(stop, cursor.index)).filter((index) => index !== -1))
+		if (stopIndex === cursor.index) {
+			return undefined
+		}
+		const text = cursor.text.slice(cursor.index, stopIndex)
+		cursor.index = stopIndex
+		return text
+	}
+}
+
+describe('Reference parser', () => {
+	it('Can parse an empty document', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '', index: 0 })
+		expect(doc).toEqual([])
 	})
 
-	describe('Commands', () => {
-		describe('Simple commands', () => {
-			it('Can parse a document with a single command node', () => {
-				const cursor = new TextCursor('@command')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe('command')
-			})
-
-			it('Can parse a document with a single command node with an argument', () => {
-				const cursor = new TextCursor('@command(1)')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe('command')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('(')
-				expect(result?.nodes[0].args[0].close).toBe(')')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe('1')
-			})
-
-			it('Can parse a document with a single command node with multiple arguments', () => {
-				const cursor = new TextCursor('@command(1)(2)')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe('command')
-				expect(result?.nodes[0].args).toHaveLength(2)
-				expect(result?.nodes[0].args[0].open).toBe('(')
-				expect(result?.nodes[0].args[0].close).toBe(')')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe('1')
-				expect(result?.nodes[0].args[1].open).toBe('(')
-				expect(result?.nodes[0].args[1].close).toBe(')')
-				expect(result?.nodes[0].args[1].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[1].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[1].document.nodes[0].text).toBe('2')
-			})
-
-			it('Can test a simple command', () => {
-				const cursor = new TextCursor('@bold{Hello World}')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe('bold')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe('Hello World')
-			})
-
-			it('Can handle empty arguments', () => {
-				const cursor = new TextCursor('@bold{}')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe('bold')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(0)
-			})
-		})
-
-		describe('Nested commands', () => {
-			it('Can parse a document with a single command node with a nested command', () => {
-				const cursor = new TextCursor('@command(@nested)')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe('command')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('(')
-				expect(result?.nodes[0].args[0].close).toBe(')')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].command).toBe('nested')
-			})
-		})
+	it('Can parse a document with a single command', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '@foo', index: 0 })
+		expect(doc).toEqual([['foo']])
 	})
 
-	describe('Text and commands', () => {
-		it('Can parse text and command', () => {
-			const cursor = new TextCursor('Hello @command(1)')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(2)
-			assert(result?.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].text).toBe('Hello ')
-			assert(result?.nodes[1] instanceof CommandNode)
-			expect(result?.nodes[1].command).toBe('command')
-			expect(result?.nodes[1].args).toHaveLength(1)
-			expect(result?.nodes[1].args[0].open).toBe('(')
-			expect(result?.nodes[1].args[0].close).toBe(')')
-			expect(result?.nodes[1].args[0].document.nodes).toHaveLength(1)
-			assert(result?.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-			expect(result?.nodes[1].args[0].document.nodes[0].text).toBe('1')
-		})
-
-		it('Can parse text command text', () => {
-			const cursor = new TextCursor('Hello @command(1) World')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(3)
-			assert(result?.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].text).toBe('Hello ')
-			assert(result?.nodes[1] instanceof CommandNode)
-			expect(result?.nodes[1].command).toBe('command')
-			expect(result?.nodes[1].args).toHaveLength(1)
-			expect(result?.nodes[1].args[0].open).toBe('(')
-			expect(result?.nodes[1].args[0].close).toBe(')')
-			expect(result?.nodes[1].args[0].document.nodes).toHaveLength(1)
-			assert(result?.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-			expect(result?.nodes[1].args[0].document.nodes[0].text).toBe('1')
-			assert(result?.nodes[2] instanceof TextNode)
-			expect(result?.nodes[2].text).toBe(' World')
-		})
-
-		it('Can parse text command text command text with no args', () => {
-			const cursor = new TextCursor('Hello @command World @command2')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(4)
-			assert(result?.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].text).toBe('Hello ')
-			assert(result?.nodes[1] instanceof CommandNode)
-			expect(result?.nodes[1].command).toBe('command')
-			expect(result?.nodes[1].args).toHaveLength(0)
-			assert(result?.nodes[2] instanceof TextNode)
-			expect(result?.nodes[2].text).toBe(' World ')
-			assert(result?.nodes[3] instanceof CommandNode)
-			expect(result?.nodes[3].command).toBe('command2')
-			expect(result?.nodes[3].args).toHaveLength(0)
-		})
+	it('Can parse a document with a single command and a single arg', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '@foo(bar)', index: 0 })
+		expect(doc).toEqual([['foo', ['(', ['bar'], ')']]])
 	})
 
-	describe('Comments', () => {
-		describe('Single line', () => {
-			it('Can parse single line comment', () => {
-				const cursor = new TextCursor('@; Hello World')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello World')
-			})
-
-			it('Can parse a recursive single line comment', () => {
-				const cursor = new TextCursor('@; Hello @; World')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(2)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello ')
-				assert(result?.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].command).toBe(';')
-				expect(result?.nodes[0].args[0].document.nodes[1].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe(' World')
-			})
-
-			it('Can parse a single line comment with a command', () => {
-				const cursor = new TextCursor('@; Hello @command World')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(3)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello ')
-				assert(result?.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].command).toBe('command')
-				expect(result?.nodes[0].args[0].document.nodes[1].args).toHaveLength(0)
-				assert(result?.nodes[0].args[0].document.nodes[2] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[2].text).toBe(' World')
-			})
-
-			it('Can parse a single line comment with a command and an argument', () => {
-				const cursor = new TextCursor('@; Hello @command(12344321) World')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(3)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello ')
-				assert(result?.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].command).toBe('command')
-				expect(result?.nodes[0].args[0].document.nodes[1].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].open).toBe('(')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].close).toBe(')')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe('12344321')
-				assert(result?.nodes[0].args[0].document.nodes[2] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[2].text).toBe(' World')
-			})
-		})
-
-		describe('Multi line comments', () => {
-			it('Can parse a multi line comment', () => {
-				const cursor = new TextCursor('@;{ Hello World }')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello World ')
-			})
-
-			it('Can parse a recursive multi line comment', () => {
-				const cursor = new TextCursor('@;{ Hello @;{ World }}')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(2)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello ')
-				assert(result?.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].command).toBe(';')
-				expect(result?.nodes[0].args[0].document.nodes[1].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe(' World ')
-			})
-
-			it('Multiple multi-line comments', () => {
-				const cursor = new TextCursor('@;{ Hello World }test@;{ Hello World }')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(3)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello World ')
-				assert(result?.nodes[1] instanceof TextNode)
-				expect(result?.nodes[1].text).toBe('test')
-				assert(result?.nodes[2] instanceof CommandNode)
-				expect(result?.nodes[2].command).toBe(';')
-				expect(result?.nodes[2].args).toHaveLength(1)
-				expect(result?.nodes[2].args[0].open).toBe('{')
-				expect(result?.nodes[2].args[0].close).toBe('}')
-				expect(result?.nodes[2].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[2].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[2].args[0].document.nodes[0].text).toBe(' Hello World ')
-			})
-
-			it('Actually multiline comments', () => {
-				const cursor = new TextCursor('@;{\nHello World\non multiple lines\n}')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe('\nHello World\non multiple lines\n')
-			})
-		})
-
-		describe('Single line and multi line comments', () => {
-			it('Can parse a multi line comment with a single line comment', () => {
-				const cursor = new TextCursor('@;{ Hello @; World }')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(2)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello ')
-				assert(result?.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].command).toBe(';')
-				expect(result?.nodes[0].args[0].document.nodes[1].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe(' World ')
-			})
-
-			it('Can parse a multi line comment with a single line comment and a multi line comment', () => {
-				const cursor = new TextCursor('@;{ Hello @; World @;{ Foo Bar }}')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(2)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello ')
-				assert(result?.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].command).toBe(';')
-				expect(result?.nodes[0].args[0].document.nodes[1].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(2)
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe(' World ')
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1].command).toBe(';')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe(' Foo Bar ')
-			})
-
-			it('Can parse a single line comment wih a multi line comment', () => {
-				const cursor = new TextCursor('@; Hello @;{ World }')
-				const result = parser.parse(cursor)
-				expect(result).not.toBeUndefined()
-				expect(result?.nodes).toHaveLength(1)
-				assert(result?.nodes[0] instanceof CommandNode)
-				expect(result?.nodes[0].command).toBe(';')
-				expect(result?.nodes[0].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].open).toBe('')
-				expect(result?.nodes[0].args[0].close).toBe('')
-				expect(result?.nodes[0].args[0].document.nodes).toHaveLength(2)
-				assert(result?.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[0].text).toBe(' Hello ')
-				assert(result?.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].command).toBe(';')
-				expect(result?.nodes[0].args[0].document.nodes[1].args).toHaveLength(1)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].open).toBe('{')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].close).toBe('}')
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(1)
-				assert(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-				expect(result?.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe(' World ')
-			})
-		})
+	it('Can parse a document with a single command and a single arg with text before', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: 'hello @foo(bar)', index: 0 })
+		expect(doc).toEqual(['hello ', ['foo', ['(', ['bar'], ')']]])
 	})
 
-	describe('Complex text', () => {
-		it('Can handle complex text', () => {
-			const cursor = new TextCursor('Hello {{420}}]]][[()]{]]{}{{}')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(1)
-			assert(result?.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].text).toBe('Hello {{420}}]]][[()]{]]{}{{}')
-		})
+	it('Can parse a document with a single command and a single arg with text after', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '@foo(bar) hello', index: 0 })
+		expect(doc).toEqual([['foo', ['(', ['bar'], ')']], ' hello'])
+	})
 
-		it('Can handle complex text with a command', () => {
-			const cursor = new TextCursor('Hello {{@world}} {]][[} ]]@whatever][((]))')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(5)
-			assert(result?.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].text).toBe('Hello {{')
-			assert(result?.nodes[1] instanceof CommandNode)
-			expect(result?.nodes[1].command).toBe('world')
-			expect(result?.nodes[1].args).toHaveLength(0)
-			assert(result?.nodes[2] instanceof TextNode)
-			expect(result?.nodes[2].text).toBe('}} {]][[} ]]')
-			assert(result?.nodes[3] instanceof CommandNode)
-			expect(result?.nodes[3].command).toBe('whatever')
-			expect(result?.nodes[3].args).toHaveLength(0)
-			assert(result?.nodes[4] instanceof TextNode)
-			expect(result?.nodes[4].text).toBe('][((]))')
-		})
+	it('Can parse a document with a single command and a single arg with text before and after', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: 'hello @foo(bar) goodbye', index: 0 })
+		expect(doc).toEqual(['hello ', ['foo', ['(', ['bar'], ')']], ' goodbye'])
+	})
 
-		it('Should reject numerical symbols', () => {
-			const cursor = new TextCursor('Hello @1234')
-			expect(() => parser.parse(cursor)).toThrow()
-		})
+	it('Can parse a comment', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '@; comment\nnormal text', index: 0 })
+		expect(doc).toEqual([[';', ['', [' comment'], '']], '\nnormal text'])
+	})
 
-		it('Can handle multiple nested calls', () => {
-			const cursor = new TextCursor('@p{@b{Hello, @i{World}}}')
-			const result = parser.parse(cursor)
-			expect(result).not.toBeUndefined()
-			expect(result?.nodes).toHaveLength(1)
-			assert(result?.nodes[0] instanceof CommandNode)
-			expect(result?.nodes[0].command).toBe('p')
-			expect(result?.nodes[0].args).toHaveLength(1)
-			expect(result?.nodes[0].args[0].open).toBe('{')
-			expect(result?.nodes[0].args[0].close).toBe('}')
-			expect(result?.nodes[0].args[0].document.nodes).toHaveLength(1)
-			assert(result?.nodes[0].args[0].document.nodes[0] instanceof CommandNode)
-			expect(result?.nodes[0].args[0].document.nodes[0].command).toBe('b')
-			expect(result?.nodes[0].args[0].document.nodes[0].args).toHaveLength(1)
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].open).toBe('{')
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].close).toBe('}')
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes).toHaveLength(2)
-			assert(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[0].text).toBe('Hello, ')
-			assert(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1] instanceof CommandNode)
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1].command).toBe('i')
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1].args).toHaveLength(1)
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1].args[0].open).toBe('{')
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1].args[0].close).toBe('}')
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1].args[0].document.nodes).toHaveLength(1)
-			assert(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0] instanceof TextNode)
-			expect(result?.nodes[0].args[0].document.nodes[0].args[0].document.nodes[1].args[0].document.nodes[0].text).toBe('World')
-		})
+	it('Can parse multiline content', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '@uwu(@foo(bar)\n@foo(bar))', index: 0 })
+		expect(doc).toEqual([['uwu', ['(', [['foo', ['(', ['bar'], ')']], '\n', ['foo', ['(', ['bar'], ')']]], ')']]])
+	})
+
+	it('Can parse multiple args', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '@foo(bar)(baz)', index: 0 })
+		expect(doc).toEqual([['foo', ['(', ['bar'], ')'], ['(', ['baz'], ')']]])
+	})
+
+	it('Can parse multiple commands', () => {
+		const parser = new DocumentParser()
+		const doc = parser.textDoc({ text: '@foo(bar)@baz(baz)', index: 0 })
+		expect(doc).toEqual([['foo', ['(', ['bar'], ')']], ['baz', ['(', ['baz'], ')']]])
 	})
 })
