@@ -1,281 +1,346 @@
-export type Symbol = string
-export type Text = string
-export type Arg = [number, string]
-export type Command = [Symbol, Arg[]]
-export type Document = [boolean, Command | Text][]
+export class Codec<A, B> {}
 
-export type ParserOptions = {
+export class FuncCodec<A, B> extends Codec<A, B> {
+	public constructor(
+		public readonly forward: (a: A) => B | undefined,
+		public readonly backward: (b: B) => A | undefined,
+	) {
+		super()
+	}
+}
+
+export interface Parser {
+	// Category
+	id<A>(): Codec<A, A>
+	seq<A, B, C>(ab: Codec<A, B>, bc: Codec<B, C>): Codec<A, C>
+	
+	// Iso
+	flip<A, B>(codec: Codec<A, B>): Codec<B, A>
+	
+	// Alt(needs a better data type, this is just a hack)
+	altn<A>(...alts: Codec<A, any>[]): Codec<A, [number, any]>
+	
+	// Pairs
+	fst<A, B, C>(codec: Codec<A, B>): Codec<[A, C], [B, C]>
+	snd<A, B, C>(codec: Codec<A, B>): Codec<[C, A], [C, B]>
+	assocr<A, B, C>(): Codec<[[A, B], C], [A, [B, C]]>
+	assocl<A, B, C>(): Codec<[A, [B, C]], [[A, B], C]>
+
+	// Lists
+	nil<A, B>(): Codec<B, [A[], B]>
+	cons<A, B>(): Codec<[[A, A[]], B], [A[], B]>
+	star<A, B>(codec: Codec<A, [B, A]>): Codec<A, [B[], A]>
+
+	// String
+	str(s: string): Codec<string, string>
+	regexp(r: RegExp): Codec<string, [string, string]>
+	parens<A>(parens: [string, string][], codec: Codec<string, [A, string]>): Codec<string, [[string, A, string], string]>
+
+	// Recursion
+	var<A, B>(name: string): Codec<A, B>
+	define<A, B>(name: string, codec: Codec<A, B>): void
+}
+
+export function seqMaybe<A, B, C>(ab: (a: A) => B | undefined, bc: (b: B) => C | undefined): (a: A) => C | undefined {
+	return (a) => {
+		const b = ab(a)
+		return b === undefined ? undefined : bc(b)
+	}
+}
+
+export class ParserEval implements Parser {
+	public id<A>(): FuncCodec<A, A> {
+		return new FuncCodec((a) => a, (a) => a)
+	}
+
+	public seq<A, B, C>(ab: FuncCodec<A, B>, bc: FuncCodec<B, C>): FuncCodec<A, C> {
+		return new FuncCodec(seqMaybe(ab.forward, bc.forward), seqMaybe(bc.backward, ab.backward))
+	}
+
+	public flip<A, B>(codec: FuncCodec<A, B>): FuncCodec<B, A> {
+		return new FuncCodec(codec.backward, codec.forward)
+	}
+
+	public altn<A>(...alts: FuncCodec<A, any>[]): FuncCodec<A, [number, any]> {
+		return new FuncCodec(
+			(a) => {
+				for (let i = 0; i < alts.length; i++) {
+					const b = alts[i].forward(a)
+					if (b !== undefined) {
+						return [i, b]
+					}
+				}
+
+				return undefined
+			},
+			([i, b]) => {
+				return alts[i].backward(b)
+			}
+		)
+	}
+
+	public star<A, B>(codec: FuncCodec<A, [B, A]>): FuncCodec<A, [B[], A]> {
+		return new FuncCodec(
+			(a) => {
+				// Repeat until we can't parse any more, dumping the results into an array.
+				const bs: B[] = []
+				while (true) {
+					const b = codec.forward(a)
+					if (b === undefined || b[1] === a) {
+						return [bs, a]
+					}
+
+					bs.push(b[0])
+					a = b[1]
+				}
+			},
+			([bs, a]) => {
+				// Reverse the array, then parse each element in turn, 
+				for (const b of bs.reverse()) {
+					const a2 = codec.backward([b, a])
+					if (a2 === undefined) {
+						return undefined
+					}
+
+					a = a2
+				}
+
+				return a
+			}
+		)
+	}
+
+	public fst<A, B, C>(codec: FuncCodec<A, B>): FuncCodec<[A, C], [B, C]> {
+		return new FuncCodec(
+			([a, c]: [A, C]): [B, C] | undefined => {
+				const b = codec.forward(a)
+				return b === undefined ? undefined : [b, c]
+			},
+			([b, c]: [B, C]): [A, C] | undefined => {
+				const a = codec.backward(b)
+				return a === undefined ? undefined : [a, c]
+			}
+		)
+	}
+
+	public snd<A, B, C>(codec: FuncCodec<A, B>): FuncCodec<[C, A], [C, B]> {
+		return new FuncCodec(
+			([c, a]: [C, A]): [C, B] | undefined => {
+				const b = codec.forward(a)
+				return b === undefined ? undefined : [c, b]
+			},
+			([c, b]: [C, B]): [C, A] | undefined => {
+				const a = codec.backward(b)
+				return a === undefined ? undefined : [c, a]
+			}
+		)
+	}
+
+	public assocr<A, B, C>(): FuncCodec<[[A, B], C], [A, [B, C]]> {
+		return new FuncCodec(
+			([[a, b], c]) => [a, [b, c]],
+			([a, [b, c]]) => [[a, b], c],
+		)
+	}
+
+	public assocl<A, B, C>(): FuncCodec<[A, [B, C]], [[A, B], C]> {
+		return this.flip(this.assocr())
+	}
+
+	public nil<A, B>(): Codec<B, [A[], B]> {
+		return new FuncCodec(
+			(b: B): [A[], B] => [[], b],
+			([empty, b]) => empty.length === 0 ? b : undefined,
+		)
+	}
+
+	public cons<A, B>(): FuncCodec<[[A, A[]], B], [A[], B]> {
+		return new FuncCodec(
+			([[a, as], b]) => [[a, ...as], b],
+			([[a, ...as], b]) => [[a, as], b],
+		)
+	}
+
+	public str(start: string): FuncCodec<string, string> {
+		return new FuncCodec(
+			(text) => text.startsWith(start) ? text.slice(start.length) : undefined,
+			(text) => start + text,
+		)
+	}
+
+	public regexp(r: RegExp): FuncCodec<string, [string, string]> {
+		return new FuncCodec(
+			(s) => {
+				const match = r.exec(s)
+				return match === null ? undefined : [match[0], s.slice(match[0].length)]
+			},
+			([match, rest]) => match + rest,
+		)
+	}
+
+	public parens<A>(parens: [string, string][], codec: FuncCodec<string, [A, string]>): FuncCodec<string, [[string, A, string], string]> {
+		return new FuncCodec(
+			(s: string): [[string, A, string], string] | undefined => {
+				for (const [open, close] of parens) {
+					if (!s.startsWith(open)) {
+						continue
+					}
+
+					const a = codec.forward(s.slice(open.length))
+					if (a === undefined) {
+						continue
+					}
+
+					const [a2, rest] = a
+					if (!rest.startsWith(close)) {
+						continue
+					}
+
+					return [[open, a2, close], rest.slice(close.length)]
+				}
+
+				return undefined
+			},
+			([[open, a, close], rest]) => {
+				const result = codec.backward([a, close + rest])
+				if (result === undefined) {
+					return undefined
+				}
+
+				return open + result
+			}
+		)
+	}
+
+	// Environment mapping variable names to their values
+	public readonly env: Map<string, FuncCodec<any, any>> = new Map()
+
+	public var<A, B>(name: string): FuncCodec<A, B> {
+		return new FuncCodec(
+			(a: A): B | undefined => {	
+				const codec = this.env.get(name)
+				if (codec === undefined) {
+					return undefined
+				}
+
+				return codec.forward(a)
+			},
+			(b: B): A | undefined => {
+				const codec = this.env.get(name)
+				if (codec === undefined) {
+					return undefined
+				}
+
+				return codec.backward(b)
+			},
+		)
+	}
+
+	public define<A, B>(name: string, codec: FuncCodec<A, B>): void {
+		this.env.set(name, codec)
+	}
+}
+
+export type Document = Segment[]
+export type Segment = [0, Text] | [1, Command]
+export type Text = string
+export type Command = [string, ...Arg[]]
+export type Arg = [string, ArgBody, string]
+export type ArgBody = ([0, Text] | [1, Command] | [2, Arg])[]
+
+export type DocumentParserOptions = {
 	command: string
 	comment: string
-	spaces: string[]
-	newlines: string[]
 	parens: [string, string][]
 }
 
-export type TextCursor = {
-	text: string
-	index: number
-}
-
-export interface ICodec<A, B> {}
-
-export interface ICodecFactory {
-	alt<A, B>(...alts: ICodec<A, B>[]): ICodec<A, B>
-}
-
-
-export class EvalCodec<A, B> implements ICodec<A, B> {
+export class DocumentParser {
 	public constructor(
-		public readonly encode: (a: A) => B,
-		public readonly decode: (b: B) => A,
-	) {}
-}
-
-export class EvalCodecRef<A, B> {
-	public constructor(
-		public readonly factory: ICodecFactory,
-		public readonly codec: EvalCodec<A, B>,
-	) {}
-}
-
-export class CodecFactory implements ICodecFactory {
-	public seq<A, B, C>(f: EvalCodec<A, B>, g: EvalCodec<B, C>): EvalCodec<A, C> {
-		return new EvalCodec(
-			(a) => g.encode(f.encode(a)),
-			(c) => f.decode(g.decode(c)),
-		)
-	}
-
-	public flip<A, B>(codec: EvalCodec<A, B>): EvalCodec<B, A> {
-		return new EvalCodec(codec.decode, codec.encode)
-	}
-
-	public alt<A, B, C, D>(left: EvalCodec<A, [B, D]>, right: EvalCodec<A, [C, D]>): EvalCodec<A, [[boolean, B | C], D]> {
-		return new EvalCodec(
-			(a): [[boolean, B | C], D] => {
-				try {
-					const [b, d] = left.encode(a)
-					return [[true, b], d]
-				} catch {
-					const [c, d] = right.encode(a)
-					return [[false, c], d]
-				}
-			},
-			([[isLeft, bOrC], d]) => (isLeft ? left : right).decode([bOrC as B & C, d]),
-		)
-	}
-
-	public altn<A, B>(...alts: EvalCodec<A, B>[]): EvalCodec<A, [number, B]> {
-		return new EvalCodec(
-			(a) => {
-				for (let i = 0; i < alts.length; i++) {
-					try {
-						return [i, alts[i].encode(a)]
-					} catch {}
-				}
-
-				throw new Error('No match')
-			},
-			([i, b]) => alts[i].decode(b),
-		)
-	}
-
-	// TODO: Semigroup instead of string
-	public repeat<B>(codec: EvalCodec<string, [B, string]>): EvalCodec<string, [B[], string]> {
-		return new EvalCodec(
-			(a) => {
-				const bs: B[] = []
-				while (true) {
-					try {
-						const [value, newA] = codec.encode(a)
-						if (newA === a) {
-							return [bs, a]
-						}
-
-						bs.push(value)
-						a = newA
-					} catch {
-						return [bs, a]
-					}
-				}
-			},
-			([bs, a]) => bs.reverse().reduce((a, b) => codec.decode([b, a]), a),
-		)
-	}
-
-	// FIXME: Semigroup and equality
-	public readUntilAny(until: string[]): EvalCodec<string, [string, string]> {
-		return new EvalCodec(
-			(a) => {
-				const index = until.reduce((index, u) => {
-					const i = a.indexOf(u)
-					return i === -1 ? index : i < index ? i : index
-				}, a.length)
-
-				return [a.slice(0, index), a.slice(index)]
-			},
-			([a, b]) => a + b,
-		)
-	}
-
-	// FIXME: Make this a general equality check on the prefix of a semigroup
-	public constText(text: string): EvalCodec<string, string> {
-		return new EvalCodec(
-			(a) => {
-				if (a.startsWith(text)) {
-					return a.slice(text.length)
-				}
-
-				throw new Error('No match')
-			},
-			(a) => text + a,
-		)
-	}
-
-	// FIXME: Internalise the predicate
-	public checkText(pred: (text: string) => boolean): EvalCodec<string, string> {
-		return new EvalCodec(
-			(a) => {
-				if (pred(a)) {
-					return a
-				}
-
-				throw new Error('No match')
-			},
-			(a) => a,
-		)
-	}
-
-	// FIXME: Use an internal type for this instead of { length: number }
-	public checkLength<T extends { length: number }>(pred: (length: number) => boolean): EvalCodec<T, T> {
-		return new EvalCodec(
-			(a) => {
-				if (pred(a.length)) {
-					return a
-				}
-
-				throw new Error('No match')
-			},
-			(a) => a,
-		)
-	}
-
-	public pair<A, B, C>(): EvalCodec<[A, [B, C]], [[A, B], C]> {
-		return new EvalCodec(
-			([a, [b, c]]) => [[a, b], c],
-			([[a, b], c]) => [a, [b, c]],
-		)
-	}
-
-	// TODO: All internal, this should be a function
-	public surround<A>(parens: [string, string][], codec: EvalCodec<string, [A, string]>): EvalCodec<string, [[number, A], string]> {
-		const terms = parens.map(([open, close]) => this.seq(this.constText(open), this.seq(codec, this.snd(this.constText(close)))))
-		return this.seq(this.altn(...terms), this.pair())
-	}
-
-	public fst<A, B, C>(codec: EvalCodec<A, B>): EvalCodec<[A, C], [B, C]> {
-		return new EvalCodec(
-			([a, c]) => [codec.encode(a), c],
-			([b, c]) => [codec.decode(b), c],
-		)
-	}
-
-	public snd<A, B, C>(codec: EvalCodec<A, B>): EvalCodec<[C, A], [C, B]> {
-		return new EvalCodec(
-			([c, a]) => [c, codec.encode(a)],
-			([c, b]) => [c, codec.decode(b)],
-		)
-	}
-}
-
-export class DocumentParser2 {
-	public constructor(
-		public readonly options: ParserOptions = {
+		public readonly options: DocumentParserOptions = {
 			command: '@',
 			comment: ';',
-			spaces: [' ', '\t'],
-			newlines: ['\r', '\n'],
-			parens: [['(', ')'], ['[', ']'], ['{', '}']],
+			parens: [['(', ')'], ['{', '}'], ['[', ']']],
 		},
 	) {}
 
-	public textDoc(f: CodecFactory): EvalCodec<Text, [Document, Text]> {
-		const argBody = f.readUntilAny([this.options.command, ...this.options.parens.flat()])
-		const arg = f.surround(this.options.parens, argBody)
+	public text(p: Parser): Codec<string, [Document, string]> {
+		const text = p.regexp(/^[^@]+/)
+		const symbol = p.regexp(/^[a-zA-Z0-9_]*/)
+		const argText = p.regexp(/^[^@({\[\]})]+/)
 
-		const symbol = f.readUntilAny([this.options.command, this.options.comment, ...this.options.newlines, ...this.options.spaces, ...this.options.parens.flat()])
-		const command = f.seq(f.constText(this.options.command), f.seq(f.seq(symbol, f.snd(f.repeat(arg))), f.pair()))
+		const argBody = p.star(p.seq(p.altn(argText, p.var<string, [Command, string]>('command'), p.var<string, [Arg, string]>('arg')), p.assocl()))
 
-		const text = f.readUntilAny([this.options.command])
+		const arg = p.parens(this.options.parens, argBody)
+		p.define('arg', arg)
 		
-		const segment = f.alt(command, text)
-		const document = f.repeat(segment)
+		const commandBody = p.seq(p.seq(p.seq(symbol, p.snd(p.star(p.var<string, [Arg, string]>('arg')))), p.assocl()), p.cons())
+		const command = p.seq(p.str(this.options.command), commandBody)
+		p.define('command', command)
 
+		const document: Codec<string, [Document, string]> = p.star(p.seq(p.altn(text, command), p.assocl()))
+		
 		return document
 	}
 }
 
-describe('Document parser', () => {
-	it('Can parse a blank document', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('')
-		expect(doc).toEqual([[], ''])
+describe('DocumentParser', () => {
+	it('parses a plain text document', () => {
+		const parser = new ParserEval()
+		const documentParser = new DocumentParser()
+		const textDocumentParser = documentParser.text(parser) as FuncCodec<string, Document>
+		const document = 'Hello, world!'
+		const result = textDocumentParser.forward(document)
+		const parsed: Document = [
+			[0, 'Hello, world!']
+		]
+		expect(result).toEqual([parsed, ''])
 	})
 
-	it('Can parse a document with normal text', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('Hello world!')
-		expect(doc).toEqual([[[false, 'Hello world!']], ''])
+	it('parses a document with a command', () => {
+		const parser = new ParserEval()
+		const documentParser = new DocumentParser()
+		const textDocumentParser = documentParser.text(parser) as FuncCodec<string, Document>
+		const document = '@command'
+		const result = textDocumentParser.forward(document)
+		const parsed: Document = [
+			[1, ['command']]
+		]
+		expect(result).toEqual([parsed, ''])
 	})
 
-	it('Can print a document with normal text', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const text = textParser.decode([[[false, 'Hello world!']], ''])
-		expect(text).toEqual('Hello world!')
+	it('parses a document with a command and an argument', () => {
+		const parser = new ParserEval()
+		const documentParser = new DocumentParser()
+		const textDocumentParser = documentParser.text(parser) as FuncCodec<string, Document>
+		const document = '@command(arg)'
+		const result = textDocumentParser.forward(document)
+		const parsed: Document = [
+			[1, ['command', ['(', [[0, 'arg']], ')']]]
+		]
+		expect(result).toEqual([parsed, ''])
 	})
 
-	it('Can parse a document with a command', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('@command')
-		expect(doc).toEqual([[[true, ['command', []]]], ''])
+	it('parses a document with a command and an argument with a command', () => {
+		const parser = new ParserEval()
+		const documentParser = new DocumentParser()
+		const textDocumentParser = documentParser.text(parser) as FuncCodec<string, Document>
+		const document = '@command(arg@command)'
+		const result = textDocumentParser.forward(document)
+		const parsed: Document = [
+			[1, ['command', ['(', [[0, 'arg'], [1, ['command']]], ')']]]
+		]
+		expect(result).toEqual([parsed, ''])
 	})
 
-	it('Can parse a document with text and a command', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('Hello @command')
-		expect(doc).toEqual([[[false, 'Hello '], [true, ['command', []]]], ''])
-	})
-
-	it('Can parse a document with a command and text', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('@command Hello')
-		expect(doc).toEqual([[[true, ['command', []]], [false, ' Hello']], ''])
-	})
-
-	it('Can parse a document with a command and a command', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('@command1@command2')
-		expect(doc).toEqual([[[true, ['command1', []]], [true, ['command2', []]]], ''])
-	})
-
-	it('Can parse arguments', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('@command(arg1)')
-		expect(doc).toEqual([[[true, ['command', [[0, 'arg1']]]]], ''])
-	})
-
-	it('Can parse arguments with spaces', () => {
-		const parser = new DocumentParser2()
-		const textParser = parser.textDoc(new CodecFactory())
-		const doc = textParser.encode('@command( arg1 )')
-		expect(doc).toEqual([[[true, ['command', [[0, ' arg1 ']]]]], ''])
+	it('parses a document with a command and an argument with a command and an argument', () => {
+		const parser = new ParserEval()
+		const documentParser = new DocumentParser()
+		const textDocumentParser = documentParser.text(parser) as FuncCodec<string, Document>
+		const document = '@command(arg@command(arg))'
+		const result = textDocumentParser.forward(document)
+		const parsed: Document = [
+			[1, ['command', ['(', [[0, 'arg'], [1, ['command', ['(', [[0, 'arg']], ')']]]], ')']]]
+		]
+		expect(result).toEqual([parsed, ''])
 	})
 })
