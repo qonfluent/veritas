@@ -170,3 +170,72 @@ Layer 4: The Renderer
 - The renderer is a function that takes a Value and converts it into an output format.
 - This is a codec from a Value back to a base type, such as a string or a byte array.
 - The result of a renderer is sent to an implementation of the Output interface.
+
+
+
+
+
+
+This is an example of defining a language and then using it. First, we define TestLang
+
+@language[TestLang]{
+	First we do some imports from core and set up a default export so this language can be used
+
+	@import{
+		import { Symbol, AtCode } from Core
+		export default Expr
+	}
+
+	Here's a silly example syntax, showing some of the pattern matching operators:
+
+	@syntax{
+		@; We can have single line comments like this still
+		Var = Symbol
+		Expr =
+			| Var
+		  > '\\' Var _ '=>' _ e
+			> Expr __ Expr
+			| '(' Expr ')'
+			| 'abort'
+			| n:[0-9]+ => decimal n
+			> AtCode
+
+		_ = [ \t]*  {{drop}}
+		__ = [ \t]+ {{drop}}
+	}
+
+	Some more syntax parts can be added. If a syntax symbol is defined more than once,
+	the system will merge them into alt cases(i.e. insert | between the defs)
+
+	From the syntax definition, we can automatically generate the following:
+
+	@ul{
+		@li{An ADT representing the syntax}
+		@li{A parser from UTF-8 text to the ADT}
+		@li{A printer that converts the ADT to text}
+		@li{A decoder from a common binary format to the ADT}
+		@li{An encoder from the ADT to a common binary format}
+	}
+
+	For a small cost of adding a few annotations and reduction operations you can get a very clean
+	and easy to work with ADT from the parser
+
+	Some semantics syntax goes here, probably quite similar to the reduction sytax above used on _ and __
+	Conceptually these are an abstraction of sequent calculus.
+
+	@semantics{}
+	
+	Some data needs special representations in formats other than the default text/binary
+	These representations can be defined using these blocks. Here's an example of representing
+	the ADT as an image. The representation 'image' defined below would generate an image output
+	assuming the system supported a bitmap graphics mode of at least 1024x768.
+
+	This syntax needs a bit of love, but the idea is to allow for representing the data in
+	whatever format is the most convenient for that type, while also tagging the data at a
+	high level with the metadata of the format, so different devices can automatically select
+	the set of representations they can support. This is similar to capabilities/effects/protocols.
+
+	@representation[name=image, require=graphics(bitmap(32bpp, x >= 1024px, y >= 768px))]{
+		<Representations use the same syntax as "syntax", but start with the abstract type>
+	}
+}
