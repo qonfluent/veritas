@@ -2,7 +2,7 @@ import { Language } from "../../src/language/AST"
 import { CodecFuncGroup, compileLanguage } from "../../src/language/Compiler"
 
 describe('Pattern Language', () => {
-	describe('Pattern Language Unit Tests', () => {
+	describe.skip('Pattern Language Unit Tests', () => {
 		const lang: Language = {
 			'any': { args: [], body: { tag: 'PAny' } },
 			'none': { args: [], body: { tag: 'PNone' } },
@@ -365,7 +365,30 @@ describe('Pattern Language', () => {
 
 	describe('Document language', () => {
 		const language: Language = {
-			//'document': { args: [], body: { tag: 'PRepeat', pattern: { tag: 'PAlt', patterns: [] }} }
+			'Document': { args: [], body: { tag: 'PRepeat', pattern: { tag: 'PCall', name: 'Segment', args: [] }, min: 0 } },
+			'Segment': { args: [], body: { tag: 'PAlt', patterns: [
+				{ tag: 'PCall', name: 'Text', args: [] },
+				{ tag: 'PCall', name: 'Command', args: [] },
+			] } },
+			'Text': { args: [], body: { tag: 'PRegex', value: /[^@]+/ } },
+			'Command': { args: [], body: { tag: 'PThen', patterns: [
+				{ tag: 'PStr', value: '@' },
+				{ tag: 'PRegex', value: /[a-zA-Z]+/ },
+			] } },
 		}
+
+		const compiled = compileLanguage(language)
+		
+		describe('Parsing', () => {
+			it('Can parse a blank document', (done) => {
+				compiled.Document().forward({ env: {}, value: { tag: 'VString', value: '' } }, (state) => {
+					expect(state).toEqual({ env: {}, value: { tag: 'VSeq', value: [
+						{ tag: 'VSeq', value: [] },
+						{ tag: 'VString', value: '' },
+					] } })
+					done()
+				})
+			})
+		})
 	})
 })

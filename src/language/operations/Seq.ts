@@ -66,6 +66,8 @@ export function compileRepeat(pattern: Pattern, min: number, max: number | undef
 					return cb(generateResult(results, state))
 				}
 
+				console.log(newState)
+
 				if (newState.value.tag !== 'VSeq') return cb(undefined)
 				if (newState.value.value.length !== 2) return cb(undefined)
 

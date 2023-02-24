@@ -43,30 +43,33 @@ export function compileBind(name: Name, pattern: Pattern, env: CodecFuncGroup): 
 	})
 }
 
-export function compileCall(name: Name, args: (Name | PatternFunc)[], env: CodecFuncGroup): CodecFunc {
-	const func = env[name]
-	if (func === undefined) {
-		throw new Error(`Unknown pattern function ${name}`)
+export function compileCall(name: Name, callArgs: (Name | PatternFunc)[], env: CodecFuncGroup): CodecFunc {
+	return (...args: CodecFunc[]) => {
+		const func = env[name]
+		if (func === undefined) {
+			throw new Error(`Unknown pattern function ${name}`)
+		}
+
+		const compiledArgs = callArgs.map((arg) => typeof arg === 'string' ? env[arg] : compilePatternFunc(arg, name, env))
+		const compiledFunc = func(...args)
+
+		return {
+			forward: (state, cb) => {
+				if (args.length !== compiledArgs.length) {
+					throw new Error(`Invalid number of arguments for pattern function ${name}`)
+				}
+
+				compiledFunc.forward(state, cb)
+			},
+			backward: (state, cb) => {
+				if (args.length !== compiledArgs.length) {
+					throw new Error(`Invalid number of arguments for pattern function ${name}`)
+				}
+
+				compiledFunc.backward(state, cb)
+			},
+		}
 	}
-
-	const compiledArgs = args.map((arg) => typeof arg === 'string' ? env[arg] : compilePatternFunc(arg, name, env))
-
-	return (...args: CodecFunc[]) => ({
-		forward: (state, cb) => {
-			if (args.length !== compiledArgs.length) {
-				throw new Error(`Invalid number of arguments for pattern function ${name}`)
-			}
-
-			func(...args).forward(state, cb)
-		},
-		backward: (state, cb) => {
-			if (args.length !== compiledArgs.length) {
-				throw new Error(`Invalid number of arguments for pattern function ${name}`)
-			}
-
-			func(...args).backward(state, cb)
-		},
-	})
 }
 
 export function compileThen(patterns: Pattern[], env: CodecFuncGroup): CodecFunc {
