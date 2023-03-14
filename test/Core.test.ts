@@ -71,19 +71,85 @@ describe('Core', () => {
 		})
 
 		describe('Sequences', () => {
-			it('should unify a sequence of constants', () => {
-				const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, [])
-				expect(result.head).toEqual([[]])
+			describe('Seq', () => {
+				it('should unify a sequence of constants', () => {
+					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, [])
+					expect(result.head).toEqual([[]])
+				})
+
+				it('should unify a sequence of variables', () => {
+					const result = unify({ tag: 'seq', seq: [{ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' }] }, { tag: 'seq', seq: [{ tag: 'var', var: 'z' }, { tag: 'var', var: 'w' }] }, [])
+					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'z' } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'var', var: 'w' } }]])
+				})
+
+				it('should unify a sequence of constants and variables', () => {
+					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'var', var: 'x' }] }, { tag: 'seq', seq: [{ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }] }, [])
+					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }, { tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 2 } }]])
+				})
 			})
 
-			it('should unify a sequence of variables', () => {
-				const result = unify({ tag: 'seq', seq: [{ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' }] }, { tag: 'seq', seq: [{ tag: 'var', var: 'z' }, { tag: 'var', var: 'w' }] }, [])
-				expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'z' } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'var', var: 'w' } }]])
+			describe('Nil', () => {
+				it('Should unify nil', () => {
+					const result = unify({ tag: 'nil' }, { tag: 'nil' }, [])
+					expect(result.head).toEqual([[]])
+				})
+
+				it('Should fail to unify nil and a cons', () => {
+					const result = unify({ tag: 'nil' }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
+					expect(result.head).toEqual([])
+				})
+
+				it('Should fail to unify a cons and nil', () => {
+					const result = unify({ tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, { tag: 'nil' }, [])
+					expect(result.head).toEqual([])
+				})
+
+				it('Should fail to unify a sequence and nil', () => {
+					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'nil' }, [])
+					expect(result.head).toEqual([])
+				})
+
+				it('Should fail to unify nil and a sequence', () => {
+					const result = unify({ tag: 'nil' }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, [])
+					expect(result.head).toEqual([])
+				})
+
+				it('Should unify an empty sequence and nil', () => {
+					const result = unify({ tag: 'seq', seq: [] }, { tag: 'nil' }, [])
+					expect(result.head).toEqual([[]])
+				})
 			})
 
-			it('should unify a sequence of constants and variables', () => {
-				const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'var', var: 'x' }] }, { tag: 'seq', seq: [{ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }] }, [])
-				expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }, { tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 2 } }]])
+			describe('Cons', () => {
+				it('Should unify a sequence and a cons', () => {
+					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
+					expect(result.head).toEqual([[]])
+				})
+
+				it('Should unify a cons and a sequence', () => {
+					const result = unify({ tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, [])
+					expect(result.head).toEqual([[]])
+				})
+
+				it('Should unify a sequence and a cons with a variable', () => {
+					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'cons', head: { tag: 'var', var: 'x' }, tail: { tag: 'nil' } }, [])
+					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }]])
+				})
+
+				it('Should fail to unify a sequence and a cons with a different constant', () => {
+					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'cons', head: { tag: 'const', const: 2 }, tail: { tag: 'nil' } }, [])
+					expect(result.head).toEqual([])
+				})
+
+				it('Should unify a cons with a cons', () => {
+					const result = unify({ tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
+					expect(result.head).toEqual([[]])
+				})
+
+				it('Should unify a cons with a cons with a variable', () => {
+					const result = unify({ tag: 'cons', head: { tag: 'var', var: 'x' }, tail: { tag: 'nil' } }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
+					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }]])
+				})
 			})
 		})
 
@@ -214,6 +280,13 @@ describe('Core', () => {
 				const result = take(1, run(disj(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 2 }), eq({ tag: 'const', const: 2 }, { tag: 'const', const: 2 }))))
 				expect(result[0].constraints).toEqual([])
 			})
+		})
+	})
+
+	describe('Suspended goals', () => {
+		it('Will suspend a goal', () => {
+			const result = take(1, run(eq<string | number>({ tag: 'var', var: '@x' }, { tag: 'seq', seq: [{ tag: 'const', const: '*' }, { tag: 'const', const: 2 }, { tag: 'var', var: 'y' }] })))
+			expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: '@x' }, rhs: { tag: 'seq', seq: [{ tag: 'const', const: '*' }, { tag: 'const', const: 2 }, { tag: 'var', var: 'y' }] } }])
 		})
 	})
 })

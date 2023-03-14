@@ -34,6 +34,26 @@ export function unify<A>(lhs: Term<A>, rhs: Term<A>, env: ConstraintSet<A>, eq: 
 	if (lhs.tag === 'seq' && rhs.tag === 'seq') {
 		if (lhs.seq.length !== rhs.seq.length) return empty()
 		return lhs.seq.reduce((acc, t, i) => bind(acc, (env) => unify(t, rhs.seq[i], env, eq)), singleton(env))
+	} else if (lhs.tag === 'nil' && rhs.tag === 'nil') {
+		return singleton(env)
+	} else if (lhs.tag === 'cons' && rhs.tag === 'cons') {
+		return bind(unify(lhs.head, rhs.head, env, eq), (env) => unify(lhs.tail, rhs.tail, env, eq))
+	} else if(lhs.tag === 'seq' && rhs.tag === 'cons') {
+		if (lhs.seq.length === 0) return empty()
+		return bind(unify(lhs.seq[0], rhs.head, env, eq), (env) => unify({ tag: 'seq', seq: lhs.seq.slice(1) }, rhs.tail, env, eq))
+	} else if(lhs.tag === 'cons' && rhs.tag === 'seq') {
+		if (rhs.seq.length === 0) return empty()
+		return bind(unify(lhs.head, rhs.seq[0], env, eq), (env) => unify(lhs.tail, { tag: 'seq', seq: rhs.seq.slice(1) }, env, eq))
+	} else if(lhs.tag === 'seq' && rhs.tag === 'nil') {
+		if (lhs.seq.length === 0) return singleton(env)
+		return empty()
+	} else if(lhs.tag === 'nil' && rhs.tag === 'seq') {
+		if (rhs.seq.length === 0) return singleton(env)
+		return empty()
+	} else if(lhs.tag === 'cons' && rhs.tag === 'nil') {
+		return empty()
+	} else if(lhs.tag === 'nil' && rhs.tag === 'cons') {
+		return empty()
 	}
 
 	if (lhs.tag === 'set' && rhs.tag === 'set') {
