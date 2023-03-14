@@ -73,6 +73,10 @@ export function fresh<A>(f: (...args: Term<A>[]) => Goal<A>): Goal<A> {
 	}
 }
 
+export function conde<A>(...cases: Goal<A>[][]): Goal<A> {
+	return disj(...cases.map((goals) => conj(...goals)))
+}
+
 export function run<A>(goal: Goal<A>, state: State<A> = init()): Stream<State<A>> {
 	return goal(state)
 }
