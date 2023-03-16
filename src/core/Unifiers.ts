@@ -76,7 +76,8 @@ export function eqSnocSnoc(lhs: SnocTerm, rhs: SnocTerm): Goal {
 }
 
 export function eqSetSet(lhs: SetTerm, rhs: SetTerm): Goal {
-	if (lhs[1].length !== rhs[1].length || lhs[1].length === 0) return failure()
+	if (lhs[1].length !== rhs[1].length) return failure()
+	if (lhs[1].length === 0) return success()
 	return disj(...rhs[1].map((v, i) => conj(eq(lhs[1][0], v), eq([Tag.Set, lhs[1].slice(1)], [Tag.Set, remove(rhs[1], i)]))))
 }
 
