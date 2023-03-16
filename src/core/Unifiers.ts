@@ -45,17 +45,15 @@ export function eqBind(lhs: VarTerm, rhs: Term): Goal {
 }
 
 export function eqSeqSeq(lhs: SeqTerm, rhs: SeqTerm): Goal {
-	if (lhs[1].length !== rhs[1].length) return failure()
-	return conj(...rangeMap(lhs[1].length, (i) => eq(lhs[1][i], rhs[1][i])))
+	return maybe(lhs[1].length === rhs[1].length, conj(...rangeMap(lhs[1].length, (i) => eq(lhs[1][i], rhs[1][i]))))
 }
 
 export function eqSeqNil(lhs: SeqTerm, rhs: NilTerm): Goal {
-	return lhs[1].length === 0 ? success() : failure()
+	return maybe(lhs[1].length === 0)
 }
 
 export function eqSeqCons(lhs: SeqTerm, rhs: ConsTerm): Goal {
-	if (lhs[1].length === 0) return failure()
-	return conj(eq(lhs[1][0], rhs[1]), eq([Tag.Seq, lhs[1].slice(1)], rhs[2]))
+	return maybe(lhs[1].length > 0, conj(eq(lhs[1][0], rhs[1]), eq([Tag.Seq, lhs[1].slice(1)], rhs[2])))
 }
 
 export function eqConsCons(lhs: ConsTerm, rhs: ConsTerm): Goal {
@@ -63,17 +61,13 @@ export function eqConsCons(lhs: ConsTerm, rhs: ConsTerm): Goal {
 }
 
 export function eqSnocSeq(lhs: SnocTerm, rhs: SeqTerm): Goal {
-	if (rhs[1].length === 0) return failure()
-	return conj(eq(lhs[1], [Tag.Seq, rhs[1].slice(0, -1)]), eq(lhs[2], rhs[1][rhs[1].length - 1]))
+	return maybe(rhs[1].length > 0, conj(eq(lhs[1], [Tag.Seq, rhs[1].slice(0, -1)]), eq(lhs[2], rhs[1][rhs[1].length - 1])))
 }
 
 export function eqSnocCons(lhs: SnocTerm, rhs: ConsTerm): Goal {
-	return disj(
-		// [...lhsHead, lhsTail] = [rhsHead, ...rhsTail] => lhsTail = rhsHead /\ lhsHead = [] /\ rhsTail = []
-		conj(eq(lhs[2], rhs[1]), eq(lhs[1], [Tag.Nil]), eq(rhs[1], [Tag.Nil])),
-		// [...lhsHead, lhsTail] = [rhsHead, ...rhsTail] => exists xs. lhsHead = [rhsHead, ...xs] /\ [...xs, lhsTail] = rhsTail
-		exists((xs: Term) => conj(eq(lhs[1], [Tag.Cons, rhs[1], xs]), eq([Tag.Snoc, xs, lhs[2]], rhs[2])))
-	)
+	const oneCase = conj(eq(lhs[2], rhs[1]), eq(lhs[1], [Tag.Nil]), eq(rhs[1], [Tag.Nil]))
+	const manyCase = exists((xs: Term) => conj(eq(lhs[1], [Tag.Cons, rhs[1], xs]), eq([Tag.Snoc, xs, lhs[2]], rhs[2])))
+	return disj(oneCase, manyCase)
 }
 
 export function eqSnocSnoc(lhs: SnocTerm, rhs: SnocTerm): Goal {
@@ -81,9 +75,11 @@ export function eqSnocSnoc(lhs: SnocTerm, rhs: SnocTerm): Goal {
 }
 
 export function eqSetSet(lhs: SetTerm, rhs: SetTerm): Goal {
-	if (lhs[1].length !== rhs[1].length) return failure()
-	if (lhs[1].length === 0) return success()
-	return disj(...rhs[1].map((v, i) => conj(eq(lhs[1][0], v), eq([Tag.Set, lhs[1].slice(1)], [Tag.Set, remove(rhs[1], i)]))))
+	return maybe(lhs[1].length === rhs[1].length, disj(...rhs[1].map((v, i) => conj(eq(lhs[1][0], v), eq([Tag.Set, lhs[1].slice(1)], [Tag.Set, remove(rhs[1], i)])))))
+}
+
+export function eqEmptySet(lhs: EmptyTerm, rhs: SetTerm): Goal {
+	return maybe(rhs[1].length === 0)
 }
 
 export function eqSubsetSet(lhs: SubsetTerm, rhs: SetTerm): Goal {

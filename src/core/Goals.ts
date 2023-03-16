@@ -14,6 +14,7 @@ export function conj(...goals: Goal[]): Goal {
 
 export function disj(...goals: Goal[]): Goal {
 	return (state) => {
+		if (goals.length === 0) return singleton(state)
 		return merge(...goals.map((goal) => goal(state)))
 	}
 }
@@ -29,7 +30,9 @@ function walk(term: Term, state: State): Term {
 	if (term[0] !== Tag.Var) return term
 	const value = state.env.get(term[1])
 	if (value === undefined) return term
-	return walk(value, state)
+	const result = walk(value, state)
+	state.env.set(term[1], result)
+	return result
 }
 
 export function eq(lhs: Term, rhs: Term): Goal {
