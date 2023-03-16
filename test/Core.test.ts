@@ -1,6 +1,6 @@
-import { Tag } from "../src/core/AST"
-import { Goal, State, eq, conj, disj, exists } from "../src/core/Goals"
-import { take } from "../src/core/Stream"
+import { Tag } from '../src/core/AST'
+import { Goal, State, eq, conj, disj, exists } from '../src/core/Goals'
+import { take } from '../src/core/Stream'
 
 export function run(n: number, goal: Goal): State[] {
 	const state = { env: new Map(), free: 0 }
@@ -158,6 +158,44 @@ describe('Core', () => {
 			})
 		})
 
+		describe('Snoc', () => {
+			it('should unify snoc', () => {
+				const goal = eq([Tag.Snoc, [Tag.Nil], [Tag.Lit, 1]], [Tag.Snoc, [Tag.Nil], [Tag.Lit, 1]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
+
+			it('should unify snoc with literals and variables', () => {
+				const goal = eq([Tag.Snoc, [Tag.Var, 'x'], [Tag.Var, 'y']], [Tag.Snoc, [Tag.Lit, 1], [Tag.Lit, 2]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]], ['y', [Tag.Lit, 2]]]), free: 0 }])
+			})
+			
+			it('should unify snoc with three terms', () => {
+				const goal = eq([Tag.Snoc, [Tag.Var, 'xs'], [Tag.Var, 'x']], [Tag.Seq, [[Tag.Lit, 1], [Tag.Lit, 2], [Tag.Lit, 3]]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['xs', [Tag.Seq, [[Tag.Lit, 1], [Tag.Lit, 2]]]], ['x', [Tag.Lit, 3]]]), free: 0 }])
+			})
+
+			it('should fail to unify snoc with empty seq', () => {
+				const goal = eq([Tag.Snoc, [Tag.Nil], [Tag.Lit, 1]], [Tag.Seq, []])
+				const states = run(10, goal)
+				expect(states).toEqual([])
+			})
+
+			it('should fail to unify snoc with nil', () => {
+				const goal = eq([Tag.Snoc, [Tag.Nil], [Tag.Lit, 1]], [Tag.Nil])
+				const states = run(10, goal)
+				expect(states).toEqual([])
+			})
+
+			it('should unify snoc with seq length 1', () => {
+				const goal = eq([Tag.Snoc, [Tag.Nil], [Tag.Lit, 1]], [Tag.Seq, [[Tag.Lit, 1]]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
+		})
+
 		describe('Sets', () => {
 			it('should unify sets of constants', () => {
 				const goal = eq([Tag.Set, [[Tag.Lit, 1], [Tag.Lit, 2]]], [Tag.Set, [[Tag.Lit, 1], [Tag.Lit, 2]]])
@@ -257,6 +295,12 @@ describe('Core', () => {
 			const goal = exists((x) => eq([Tag.Lit, 1], x))
 			const states = run(10, goal)
 			expect(states).toEqual([{ env: new Map([['@gensym(0)', [Tag.Lit, 1]]]), free: 1 }])
+		})
+
+		it('Should solve exists with two vars', () => {
+			const goal = exists((x, y) => conj(eq([Tag.Lit, 1], x), eq([Tag.Lit, 2], y)))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map([['@gensym(0)', [Tag.Lit, 1]], ['@gensym(1)', [Tag.Lit, 2]]]), free: 2 }])
 		})
 	})
 })
