@@ -1,5 +1,5 @@
 import { rangeMap, remove } from '../Utilities'
-import { Term, Tag, SeqTerm, VarTerm, NilTerm, ConsTerm, SnocTerm, SetTerm, LitTerm, SubsetTerm } from './AST'
+import { Term, Tag, SeqTerm, VarTerm, NilTerm, ConsTerm, SnocTerm, SetTerm, LitTerm, SubsetTerm, Var } from './AST'
 import { Goal, conj, eq, exists, disj, State } from './Goals'
 import { empty, singleton } from './Stream'
 
@@ -18,10 +18,24 @@ export function eqLitLit(lhs: LitTerm, rhs: LitTerm): Goal {
 	return lhs[1] === rhs[1] ? success() : failure()
 }
 
+export function occurs(name: Var, term: Term): boolean {
+	switch (term[0]) {
+		case Tag.Lit: return false
+		case Tag.Var: return name === term[1]
+		case Tag.Nil: return false
+		case Tag.Cons: return occurs(name, term[1]) || occurs(name, term[2])
+		case Tag.Snoc: return occurs(name, term[1]) || occurs(name, term[2])
+		case Tag.Set: return term[1].some((t) => occurs(name, t))
+		case Tag.Subset: return term[1].some((t) => occurs(name, t)) || occurs(name, term[2])
+		case Tag.Seq: return term[1].some((t) => occurs(name, t))
+	}
+}
+
 export function eqBind(lhs: VarTerm, rhs: Term): Goal {
 	return (state) => {
 		if (rhs[0] === Tag.Var && lhs[1] === rhs[1]) return singleton(state)
-		else return singleton({ ...state, env: new Map(state.env).set(lhs[1], rhs) })
+		if (occurs(lhs[1], rhs)) return empty()
+		return singleton({ ...state, env: new Map(state.env).set(lhs[1], rhs) })
 	}
 }
 
