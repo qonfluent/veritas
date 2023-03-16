@@ -1,102 +1,44 @@
-import { Term } from "./AST"
-import { bind, empty, map, merge, singleton, Stream } from "./Stream"
+import { rangeMap } from '../Utilities'
+import { Env, Term, Tag } from './AST'
+import { Stream, bind, singleton, merge } from './Stream'
+import { getUnifiers } from './Unifiers'
 
-// Constraints
-export type EqConstraint<A> = { tag: 'eq', lhs: Term<A>, rhs: Term<A> }
-export type Constraint<A> = EqConstraint<A>
-export type ConstraintSet<A> = Constraint<A>[]
+export type State = { env: Env, free: number }
+export type Goal = (state: State) => Stream<State>
 
-// State
-export type State<A> = { constraints: ConstraintSet<A>, nextVar: number }
-
-export function init<A>(): State<A> {
-	return { constraints: [], nextVar: 0 }
-}
-
-// Goal
-export type Goal<A> = (state: State<A>) => Stream<State<A>>
-
-export type Equality<A> = (lhs: A, rhs: A) => boolean
-
-// Unification
-export function unify<A>(lhs: Term<A>, rhs: Term<A>, env: ConstraintSet<A>, eq: Equality<A> = (a, b) => a === b): Stream<ConstraintSet<A>> {
-	if (lhs.tag === 'const' && rhs.tag === 'const') {
-		if (eq(lhs.const, rhs.const)) return singleton(env)
-		return empty()
-	}
-
-	if (lhs.tag === 'var') {
-		return singleton([...env, { tag: 'eq', lhs, rhs }])
-	} else if (rhs.tag === 'var') {
-		return singleton([...env, { tag: 'eq', lhs: rhs, rhs: lhs }])
-	}
-
-	if (lhs.tag === 'seq' && rhs.tag === 'seq') {
-		if (lhs.seq.length !== rhs.seq.length) return empty()
-		return lhs.seq.reduce((acc, t, i) => bind(acc, (env) => unify(t, rhs.seq[i], env, eq)), singleton(env))
-	} else if (lhs.tag === 'nil' && rhs.tag === 'nil') {
-		return singleton(env)
-	} else if (lhs.tag === 'cons' && rhs.tag === 'cons') {
-		return bind(unify(lhs.head, rhs.head, env, eq), (env) => unify(lhs.tail, rhs.tail, env, eq))
-	} else if(lhs.tag === 'seq' && rhs.tag === 'cons') {
-		if (lhs.seq.length === 0) return empty()
-		return bind(unify(lhs.seq[0], rhs.head, env, eq), (env) => unify({ tag: 'seq', seq: lhs.seq.slice(1) }, rhs.tail, env, eq))
-	} else if(lhs.tag === 'cons' && rhs.tag === 'seq') {
-		if (rhs.seq.length === 0) return empty()
-		return bind(unify(lhs.head, rhs.seq[0], env, eq), (env) => unify(lhs.tail, { tag: 'seq', seq: rhs.seq.slice(1) }, env, eq))
-	} else if(lhs.tag === 'seq' && rhs.tag === 'nil') {
-		if (lhs.seq.length === 0) return singleton(env)
-		return empty()
-	} else if(lhs.tag === 'nil' && rhs.tag === 'seq') {
-		if (rhs.seq.length === 0) return singleton(env)
-		return empty()
-	} else if(lhs.tag === 'cons' && rhs.tag === 'nil') {
-		return empty()
-	} else if(lhs.tag === 'nil' && rhs.tag === 'cons') {
-		return empty()
-	}
-
-	if (lhs.tag === 'set' && rhs.tag === 'set') {
-		if (lhs.set.length !== rhs.set.length) return empty()
-		if (lhs.set.length === 0) return singleton(env)
-		if (lhs.set.length === 1) return unify(lhs.set[0], rhs.set[0], env, eq)
-
-		const [head, ...tail] = lhs.set
-		return merge(...rhs.set.map((t, i) => {
-			const match = unify(head, t, env, eq)
-			return bind(match, (env) => unify({ tag: 'set', set: tail }, { tag: 'set', set: rhs.set.slice(0, i).concat(rhs.set.slice(i + 1)) }, env, eq))
-		}))
-	}
-
-	return empty()
-}
-
-export function eq<A>(lhs: Term<A>, rhs: Term<A>, eq: Equality<A> = (a, b) => a === b): Goal<A> {
+export function conj(...goals: Goal[]): Goal {
 	return (state) => {
-		const match = unify(lhs, rhs, state.constraints, eq)
-		return map(match, (constraints) => ({ ...state, constraints }))
+		return goals.reduce((stream, goal) => bind(stream, goal), singleton(state))
 	}
 }
 
-export function conj<A>(...goals: Goal<A>[]): Goal<A> {
-	return (state) => goals.reduce((acc, g) => bind(acc, g), singleton(state))
-}
-
-export function disj<A>(...goals: Goal<A>[]): Goal<A> {
-	return (state) => merge(...goals.map((g) => g(state)))
-}
-
-export function fresh<A>(f: (...args: Term<A>[]) => Goal<A>): Goal<A> {
+export function disj(...goals: Goal[]): Goal {
 	return (state) => {
-		const args: Term<A>[] = [...new Array(f.length)].map((_, i) => ({ tag: 'var', var: `v${state.nextVar + i}` }))
-		return f(...args)({ ...state, nextVar: state.nextVar + args.length })
+		return merge(...goals.map((goal) => goal(state)))
 	}
 }
 
-export function conde<A>(...cases: Goal<A>[][]): Goal<A> {
-	return disj(...cases.map((goals) => conj(...goals)))
+export function exists(f: (...args: Term[]) => Goal): Goal {
+	return (state) => {
+		const vars: Term[] = rangeMap(f.length, (i) => [Tag.Var, `@gensym(${i})`])
+		return f(...vars)({ ...state, free: state.free + f.length })
+	}
 }
 
-export function run<A>(goal: Goal<A>, state: State<A> = init()): Stream<State<A>> {
-	return goal(state)
+function walk(term: Term, state: State): Term {
+	if (term[0] !== Tag.Var) return term
+	const value = state.env.get(term[1])
+	if (value === undefined) return term
+	return walk(value, state)
+}
+
+export function eq(lhs: Term, rhs: Term): Goal {
+	const unifiers = getUnifiers()
+	return (state) => {
+		lhs = walk(lhs, state)
+		rhs = walk(rhs, state)
+		const unifier = unifiers[lhs[0]][rhs[0]]
+		const result = unifier(lhs, rhs)
+		return result(state)
+	}
 }

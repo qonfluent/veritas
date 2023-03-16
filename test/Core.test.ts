@@ -1,292 +1,262 @@
-import { show } from "../src/core/AST"
-import { unify, run, eq, conj, disj } from "../src/core/Goals"
-import { empty, singleton, merge, bind, take } from "../src/core/Stream"
+import { Tag } from "../src/core/AST"
+import { Goal, State, eq, conj, disj, exists } from "../src/core/Goals"
+import { take } from "../src/core/Stream"
+
+export function run(n: number, goal: Goal): State[] {
+	const state = { env: new Map(), free: 0 }
+	const stream = goal(state)
+	return take(n, stream)
+}
 
 describe('Core', () => {
-	describe('Show', () => {
-		it('should show a constant', () => {
-			expect(show({ tag: 'const', const: 1 })).toEqual('1')
-		})
+	describe('Unification', () => {
+		describe('Literals', () => {
+			it('should unify literals', () => {
+				const goal = eq([Tag.Lit, 1], [Tag.Lit, 1])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
 
-		it('should show a variable', () => {
-			expect(show({ tag: 'var', var: 'x' })).toEqual('x')
-		})
-
-		it('should show a sequence', () => {
-			expect(show({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] })).toEqual('[1, 2]')
-		})
-
-		it('should show a set', () => {
-			expect(show({ tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] })).toEqual('{1, 2}')
-		})
-	})
-
-	describe('Streams', () => {
-		it('Should generate an empty stream', () => {
-			const stream = empty<number>()
-			expect(stream.head).toEqual([])
-			expect(stream.tail).toBeUndefined()
-		})
-
-		it('Should generate a singleton stream', () => {
-			const stream = singleton(1)
-			expect(stream.head).toEqual([1])
-			expect(stream.tail).toBeUndefined()
-		})
-
-		it('Should merge two streams', () => {
-			const stream = merge(singleton(1), singleton(2))
-			expect(stream.head).toEqual([1, 2])
-			expect(stream.tail).toBeUndefined()
-		})
-
-		it('Should bind a stream', () => {
-			const stream = bind(singleton(1), (a) => singleton(a + 1))
-			expect(stream.head).toEqual([2])
-			expect(stream.tail).toBeUndefined()
-		})
-	})
-
-	describe('Unify', () => {
-		it('should unify two constants', () => {
-			const result = unify({ tag: 'const', const: 1 }, { tag: 'const', const: 1 }, [])
-			expect(result.head).toEqual([[]])
+			it('should fail to unify literals', () => {
+				const goal = eq([Tag.Lit, 1], [Tag.Lit, 2])
+				const states = run(10, goal)
+				expect(states).toEqual([])
+			})
 		})
 
 		describe('Variables', () => {
-			it('should unify two variables', () => {
-				const result = unify({ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' }, [])
-				expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'y' } }]])
+			it('should unify variables', () => {
+				const goal = eq([Tag.Var, 'x'], [Tag.Var, 'y'])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Var, 'y']]]), free: 0 }])
 			})
 
-			it('should unify a constant and a variable', () => {
-				const result = unify({ tag: 'const', const: 1 }, { tag: 'var', var: 'x' }, [])
-				expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }]])
+			it('should unify variables with literals', () => {
+				const goal = eq([Tag.Var, 'x'], [Tag.Lit, 1])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]]]), free: 0 }])
 			})
 
-			it('should unify a variable and a constant', () => {
-				const result = unify({ tag: 'var', var: 'x' }, { tag: 'const', const: 1 }, [])
-				expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }]])
+			it('should unify variables with literals (2)', () => {
+				const goal = eq([Tag.Lit, 1], [Tag.Var, 'x'])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]]]), free: 0 }])
+			})
+		})
+		
+		describe('Sequences', () => {
+			it('should unify sequences of constants', () => {
+				const goal = eq([Tag.Seq, [[Tag.Lit, 1], [Tag.Lit, 2]]], [Tag.Seq, [[Tag.Lit, 1], [Tag.Lit, 2]]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
+
+			it('should unify sequences of variables', () => {
+				const goal = eq([Tag.Seq, [[Tag.Var, 'x'], [Tag.Var, 'y']]], [Tag.Seq, [[Tag.Var, 'x'], [Tag.Var, 'y']]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
+			
+			it('should unify sequences of variables with literals', () => {
+				const goal = eq([Tag.Seq, [[Tag.Var, 'x'], [Tag.Var, 'y']]], [Tag.Seq, [[Tag.Lit, 1], [Tag.Lit, 2]]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]], ['y', [Tag.Lit, 2]]]), free: 0 }])
+			})
+
+			it('should unify sequences of variables with literals (2)', () => {
+				const goal = eq([Tag.Seq, [[Tag.Lit, 1], [Tag.Lit, 2]]], [Tag.Seq, [[Tag.Var, 'x'], [Tag.Var, 'y']]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]], ['y', [Tag.Lit, 2]]]), free: 0 }])
+			})
+
+			it('should unify sequences of variables with literals (3)', () => {
+				const goal = eq([Tag.Seq, [[Tag.Var, 'x'], [Tag.Var, 'y']]], [Tag.Seq, [[Tag.Lit, 1], [Tag.Var, 'y']]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]]]), free: 0 }])
 			})
 		})
 
-		describe('Sequences', () => {
-			describe('Seq', () => {
-				it('should unify a sequence of constants', () => {
-					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, [])
-					expect(result.head).toEqual([[]])
-				})
-
-				it('should unify a sequence of variables', () => {
-					const result = unify({ tag: 'seq', seq: [{ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' }] }, { tag: 'seq', seq: [{ tag: 'var', var: 'z' }, { tag: 'var', var: 'w' }] }, [])
-					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'z' } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'var', var: 'w' } }]])
-				})
-
-				it('should unify a sequence of constants and variables', () => {
-					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'var', var: 'x' }] }, { tag: 'seq', seq: [{ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }] }, [])
-					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }, { tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 2 } }]])
-				})
+		describe('Nil', () => {
+			it('should unify nil', () => {
+				const goal = eq([Tag.Nil], [Tag.Nil])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
 			})
 
-			describe('Nil', () => {
-				it('Should unify nil', () => {
-					const result = unify({ tag: 'nil' }, { tag: 'nil' }, [])
-					expect(result.head).toEqual([[]])
-				})
-
-				it('Should fail to unify nil and a cons', () => {
-					const result = unify({ tag: 'nil' }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
-					expect(result.head).toEqual([])
-				})
-
-				it('Should fail to unify a cons and nil', () => {
-					const result = unify({ tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, { tag: 'nil' }, [])
-					expect(result.head).toEqual([])
-				})
-
-				it('Should fail to unify a sequence and nil', () => {
-					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'nil' }, [])
-					expect(result.head).toEqual([])
-				})
-
-				it('Should fail to unify nil and a sequence', () => {
-					const result = unify({ tag: 'nil' }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, [])
-					expect(result.head).toEqual([])
-				})
-
-				it('Should unify an empty sequence and nil', () => {
-					const result = unify({ tag: 'seq', seq: [] }, { tag: 'nil' }, [])
-					expect(result.head).toEqual([[]])
-				})
+			it('should unify nil with variables', () => {
+				const goal = eq([Tag.Nil], [Tag.Var, 'x'])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Nil]]]), free: 0 }])
 			})
 
-			describe('Cons', () => {
-				it('Should unify a sequence and a cons', () => {
-					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
-					expect(result.head).toEqual([[]])
-				})
+			it('should not unify nil with cons', () => {
+				const goal = eq([Tag.Nil], [Tag.Cons, [Tag.Lit, 1], [Tag.Nil]])
+				const states = run(10, goal)
+				expect(states).toEqual([])
+			})
 
-				it('Should unify a cons and a sequence', () => {
-					const result = unify({ tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, [])
-					expect(result.head).toEqual([[]])
-				})
+			it('should unify nil with empty sequence', () => {
+				const goal = eq([Tag.Nil], [Tag.Seq, []])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
+			
+			it('should not unify nil with non-empty sequence', () => {
+				const goal = eq([Tag.Nil], [Tag.Seq, [[Tag.Lit, 1]]])
+				const states = run(10, goal)
+				expect(states).toEqual([])
+			})
+		})
 
-				it('Should unify a sequence and a cons with a variable', () => {
-					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'cons', head: { tag: 'var', var: 'x' }, tail: { tag: 'nil' } }, [])
-					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }]])
-				})
+		describe('Cons', () => {
+			it('should unify cons', () => {
+				const goal = eq([Tag.Cons, [Tag.Lit, 1], [Tag.Nil]], [Tag.Cons, [Tag.Lit, 1], [Tag.Nil]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
 
-				it('Should fail to unify a sequence and a cons with a different constant', () => {
-					const result = unify({ tag: 'seq', seq: [{ tag: 'const', const: 1 }] }, { tag: 'cons', head: { tag: 'const', const: 2 }, tail: { tag: 'nil' } }, [])
-					expect(result.head).toEqual([])
-				})
+			it('should unify cons with variables', () => {
+				const goal = eq([Tag.Cons, [Tag.Var, 'x'], [Tag.Var, 'y']], [Tag.Cons, [Tag.Var, 'x'], [Tag.Var, 'y']])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
 
-				it('Should unify a cons with a cons', () => {
-					const result = unify({ tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
-					expect(result.head).toEqual([[]])
-				})
+			it('should unify cons with literals and variables', () => {
+				const goal = eq([Tag.Cons, [Tag.Lit, 1], [Tag.Nil]], [Tag.Cons, [Tag.Var, 'x'], [Tag.Var, 'y']])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]], ['y', [Tag.Nil]]]), free: 0 }])
+			})
 
-				it('Should unify a cons with a cons with a variable', () => {
-					const result = unify({ tag: 'cons', head: { tag: 'var', var: 'x' }, tail: { tag: 'nil' } }, { tag: 'cons', head: { tag: 'const', const: 1 }, tail: { tag: 'nil' } }, [])
-					expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }]])
-				})
+			it('should unify improper cons', () => {
+				const goal = eq([Tag.Cons, [Tag.Lit, 1], [Tag.Lit, 2]], [Tag.Cons, [Tag.Var, 'x'], [Tag.Var, 'y']])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map([['x', [Tag.Lit, 1]], ['y', [Tag.Lit, 2]]]), free: 0 }])
+			})
+
+			it('should fail to unify cons with empty seq', () => {
+				const goal = eq([Tag.Cons, [Tag.Lit, 1], [Tag.Nil]], [Tag.Seq, []])
+				const states = run(10, goal)
+				expect(states).toEqual([])
+			})
+
+			it('should unify cons with seq length 1', () => {
+				const goal = eq([Tag.Cons, [Tag.Lit, 1], [Tag.Nil]], [Tag.Seq, [[Tag.Lit, 1]]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
+
+			it('should unify cons with seq length 2', () => {
+				const goal = eq([Tag.Cons, [Tag.Lit, 1], [Tag.Cons, [Tag.Lit, 2], [Tag.Nil]]], [Tag.Seq, [[Tag.Lit, 1], [Tag.Lit, 2]]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
+			})
+
+			it('should fail to unify with nil', () => {
+				const goal = eq([Tag.Cons, [Tag.Lit, 1], [Tag.Nil]], [Tag.Nil])
+				const states = run(10, goal)
+				expect(states).toEqual([])
 			})
 		})
 
 		describe('Sets', () => {
-			it('should unify a set of constants', () => {
-				const result = unify({ tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, { tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, [])
-				expect(result.head).toEqual([[]])
+			it('should unify sets of constants', () => {
+				const goal = eq([Tag.Set, [[Tag.Lit, 1], [Tag.Lit, 2]]], [Tag.Set, [[Tag.Lit, 1], [Tag.Lit, 2]]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }])
 			})
 
-			it('should unify a set of constants in a different order', () => {
-				const result = unify({ tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, { tag: 'set', set: [{ tag: 'const', const: 2 }, { tag: 'const', const: 1 }] }, [])
-				expect(result.head).toEqual([[]])
+			it('should unify sets of variables', () => {
+				const goal = eq([Tag.Set, [[Tag.Var, 'x'], [Tag.Var, 'y']]], [Tag.Set, [[Tag.Var, 'x'], [Tag.Var, 'y']]])
+				const states = run(10, goal)
+				expect(states).toEqual([{ env: new Map(), free: 0 }, { env: new Map([['x', [Tag.Var, 'y']]]), free: 0 }])
 			})
 
-			it('should unify a set of variables', () => {
-				const result = unify({ tag: 'set', set: [{ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' }] }, { tag: 'set', set: [{ tag: 'var', var: 'z' }, { tag: 'var', var: 'w' }] }, [])
-				expect(result.head).toEqual([
-					[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'z' } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'var', var: 'w' } }],
-					[{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'w' } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'var', var: 'z' } }],
+			it('should unify sets of variables with literals', () => {
+				const goal = eq([Tag.Set, [[Tag.Var, 'x'], [Tag.Var, 'y']]], [Tag.Set, [[Tag.Lit, 1], [Tag.Lit, 2]]])
+				const states = run(10, goal)
+				expect(states).toEqual([
+					{ env: new Map([['x', [Tag.Lit, 1]], ['y', [Tag.Lit, 2]]]), free: 0 },
+					{ env: new Map([['x', [Tag.Lit, 2]], ['y', [Tag.Lit, 1]]]), free: 0 },
 				])
 			})
-
-			it('should unify a set of constants and variables', () => {
-				const result = unify({ tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'var', var: 'x' }] }, { tag: 'set', set: [{ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }] }, [])
-				expect(result.head).toEqual([[{ tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }, { tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 2 } }]])
-			})
 		})
 	})
 
-	describe('Goals', () => {
-		describe('Equality', () => {
-			it('should solve equality goal', () => {
-				const result = take(1, run(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 1 })))
-				expect(result[0].constraints).toEqual([])
-			})
-
-			it('should solve equality goal with variables', () => {
-				const result = take(1, run(eq({ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' })))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'y' } }])
-			})
-
-			it('should solve equality goal with variables and constants', () => {
-				const result = take(1, run(eq({ tag: 'var', var: 'x' }, { tag: 'const', const: 1 })))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }])
-			})
-
-			it('should solve equality goal with variables and constants in different order', () => {
-				const result = take(1, run(eq({ tag: 'const', const: 1 }, { tag: 'var', var: 'x' })))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }])
-			})
-
-			it('should solve equality goal with a sequence of constants', () => {
-				const result = take(1, run(eq({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, { tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] })))
-				expect(result[0].constraints).toEqual([])
-			})
-
-			it('should solve equality goal with a sequence of constants and variables', () => {
-				const result = take(1, run(eq({ tag: 'seq', seq: [{ tag: 'const', const: 1 }, { tag: 'var', var: 'x' }] }, { tag: 'seq', seq: [{ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }] })))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }, { tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 2 } }])
-			})
-
-			it('should solve equality goal with a set of constants', () => {
-				const result = take(1, run(eq({ tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] }, { tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'const', const: 2 }] })))
-				expect(result[0].constraints).toEqual([])
-			})
-
-			it('should solve equality goal with a set of constants and variables', () => {
-				const result = take(1, run(eq({ tag: 'set', set: [{ tag: 'const', const: 1 }, { tag: 'var', var: 'x' }] }, { tag: 'set', set: [{ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }] })))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }, { tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 2 } }])
-			})
-
-			it('should solve equality goal with a set of constants and variables in different order', () => {
-				const result = take(1, run(eq({ tag: 'set', set: [{ tag: 'var', var: 'x' }, { tag: 'const', const: 1 }] }, { tag: 'set', set: [{ tag: 'const', const: 2 }, { tag: 'var', var: 'y' }] })))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 2 } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }])
-			})
+	describe('Conjunctions', () => {
+		it('Should solve conjunctions with zero terms', () => {
+			const goal = conj()
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map(), free: 0 }])
 		})
 
-		describe('Conjunction', () => {
-			it('should solve conjunction goal', () => {
-				const result = take(1, run(conj(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 1 }), eq({ tag: 'const', const: 2 }, { tag: 'const', const: 2 }))))
-				expect(result[0].constraints).toEqual([])
-			})
-
-			it('should solve conjunction goal with variables', () => {
-				const result = take(1, run(conj(eq<number>({ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' }), eq({ tag: 'var', var: 'y' }, { tag: 'const', const: 1 }))))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'y' } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }])
-			})
-
-			it('should solve conjunction goal with variables and constants', () => {
-				const result = take(1, run(conj(eq<number>({ tag: 'var', var: 'x' }, { tag: 'const', const: 1 }), eq({ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }))))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }, { tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 2 } }])
-			})
-
-			it('Should fail conjunction goal when one side fails', () => {
-				const result = take(1, run(conj(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 2 }), eq({ tag: 'const', const: 2 }, { tag: 'const', const: 2 }))))
-				expect(result).toEqual([])
-			})
-
-			it('Should fail conjunction goal when both sides fail', () => {
-				const result = take(1, run(conj(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 2 }), eq({ tag: 'const', const: 2 }, { tag: 'const', const: 3 }))))
-				expect(result).toEqual([])
-			})
+		it('Should solve conjunctions with one term', () => {
+			const goal = conj(eq([Tag.Lit, 1], [Tag.Lit, 1]))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map(), free: 0 }])
 		})
 
-		describe('Disjunction', () => {
-			it('should solve disjunction goal', () => {
-				const result = take(1, run(disj(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 1 }), eq({ tag: 'const', const: 2 }, { tag: 'const', const: 2 }))))
-				expect(result[0].constraints).toEqual([])
-			})
+		it('Should solve conjunctions with two terms', () => {
+			const goal = conj(eq([Tag.Lit, 1], [Tag.Lit, 1]), eq([Tag.Lit, 2], [Tag.Lit, 2]))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map(), free: 0 }])
+		})
 
-			it('should solve disjunction goal with variables', () => {
-				const result = take(2, run(disj(eq<number>({ tag: 'var', var: 'x' }, { tag: 'var', var: 'y' }), eq({ tag: 'var', var: 'y' }, { tag: 'const', const: 1 }))))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'var', var: 'y' } }])
-				expect(result[1].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'y' }, rhs: { tag: 'const', const: 1 } }])
-			})
+		it('Should solve conjunctions with two terms, one of which is false', () => {
+			const goal = conj(eq([Tag.Lit, 1], [Tag.Lit, 1]), eq([Tag.Lit, 2], [Tag.Lit, 3]))
+			const states = run(10, goal)
+			expect(states).toEqual([])
+		})
 
-			it('should solve disjunction goal with variables and constants', () => {
-				const result = take(1, run(disj(eq<number>({ tag: 'var', var: 'x' }, { tag: 'const', const: 1 }), eq({ tag: 'var', var: 'y' }, { tag: 'const', const: 2 }))))
-				expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: 'x' }, rhs: { tag: 'const', const: 1 } }])
-			})
-
-			it('Should fail disjunction goal when both sides fail', () => {
-				const result = take(1, run(disj(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 2 }), eq({ tag: 'const', const: 2 }, { tag: 'const', const: 3 }))))
-				expect(result).toEqual([])
-			})
-
-			it('Should solve disjunction goal when one side fails', () => {
-				const result = take(1, run(disj(eq({ tag: 'const', const: 1 }, { tag: 'const', const: 2 }), eq({ tag: 'const', const: 2 }, { tag: 'const', const: 2 }))))
-				expect(result[0].constraints).toEqual([])
-			})
+		it('Should solve conjunctions with two terms, both of which are false', () => {
+			const goal = conj(eq([Tag.Lit, 1], [Tag.Lit, 2]), eq([Tag.Lit, 2], [Tag.Lit, 3]))
+			const states = run(10, goal)
+			expect(states).toEqual([])
 		})
 	})
 
-	describe('Suspended goals', () => {
-		it('Will suspend a goal', () => {
-			const result = take(1, run(eq<string | number>({ tag: 'var', var: '@x' }, { tag: 'seq', seq: [{ tag: 'const', const: '*' }, { tag: 'const', const: 2 }, { tag: 'var', var: 'y' }] })))
-			expect(result[0].constraints).toEqual([{ tag: 'eq', lhs: { tag: 'var', var: '@x' }, rhs: { tag: 'seq', seq: [{ tag: 'const', const: '*' }, { tag: 'const', const: 2 }, { tag: 'var', var: 'y' }] } }])
+	describe('Disjunctions', () => {
+		it('Should solve disjunctions with zero terms', () => {
+			const goal = disj()
+			const states = run(10, goal)
+			expect(states).toEqual([])
+		})
+
+		it('Should solve disjunctions with one term', () => {
+			const goal = disj(eq([Tag.Lit, 1], [Tag.Lit, 1]))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map(), free: 0 }])
+		})
+
+		it('Should solve disjunctions with two terms', () => {
+			const goal = disj(eq([Tag.Lit, 1], [Tag.Lit, 1]), eq([Tag.Lit, 2], [Tag.Lit, 2]))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map(), free: 0 }, { env: new Map(), free: 0 }])
+		})
+
+		it('Should solve disjunctions with two terms, one of which is false', () => {
+			const goal = disj(eq([Tag.Lit, 1], [Tag.Lit, 1]), eq([Tag.Lit, 2], [Tag.Lit, 3]))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map(), free: 0 }])
+		})
+
+		it('Should solve disjunctions with two terms, both of which are false', () => {
+			const goal = disj(eq([Tag.Lit, 1], [Tag.Lit, 2]), eq([Tag.Lit, 2], [Tag.Lit, 3]))
+			const states = run(10, goal)
+			expect(states).toEqual([])
+		})
+	})
+
+	describe('Exists', () => {
+		it('Should solve exists with zero vars', () => {
+			const goal = exists(() => eq([Tag.Lit, 1], [Tag.Lit, 1]))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map(), free: 0 }])
+		})
+
+		it('Should solve exists with one var', () => {
+			const goal = exists((x) => eq([Tag.Lit, 1], x))
+			const states = run(10, goal)
+			expect(states).toEqual([{ env: new Map([['@gensym(0)', [Tag.Lit, 1]]]), free: 1 }])
 		})
 	})
 })

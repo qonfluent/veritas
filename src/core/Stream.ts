@@ -4,12 +4,12 @@ export function empty<A>(): Stream<A> {
 	return { head: [] }
 }
 
-export function singleton<A>(a: A): Stream<A> {
-	return { head: [a] }
+export function isEmpty<A>(stream: Stream<A>): boolean {
+	return stream.head.length === 0 && stream.tail === undefined
 }
 
-export function map<A, B>(stream: Stream<A>, f: (a: A) => B): Stream<B> {
-	return stream.tail ? { head: stream.head.map(f), tail: () => map(stream.tail!(), f) } : { head: stream.head.map(f) }
+export function singleton<A>(a: A): Stream<A> {
+	return { head: [a] }
 }
 
 export function merge<A>(...streams: Stream<A>[]): Stream<A> {
