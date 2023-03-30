@@ -1,5 +1,4 @@
-import { Rule } from "../src/core/AST"
-import { run } from "../src/core/Core"
+import { Rule, run } from "../src/core/Core"
 
 
 describe('Core', () => {

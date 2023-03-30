@@ -1,4 +1,6 @@
-import { Value, Rule, Program } from './AST'
+export type Value = number | string | Value[]
+export type Rule = { top: Value[], bottom: Value[] }
+export type Program = { rules: Rule[], value: Value }
 
 export type Env = (Value | undefined)[]
 export type UnifyState = { lhs: Value, rhs: Value }
@@ -69,7 +71,7 @@ export function run(prog: Program): ProgramResult[] {
 		cycles: [{
 			...prog,
 			path: [],
-			pending: prog.rules.map((rule, i) => ({ env: [], unifiers: rule.top.map((v) => ({ lhs: prog.value, rhs: v })), ruleIndex: i })),
+			pending: spawnPending(prog.rules, prog.value),
 			complete: [],
 		}],
 		complete: [],
