@@ -1,4 +1,6 @@
-import { Rule, run } from "../src/core/Core"
+import { Rule } from "../src/core/AST"
+import { run } from "../src/core/Core"
+
 
 describe('Core', () => {
 	it('Can run the ABC language', () => {
@@ -7,9 +9,9 @@ describe('Core', () => {
 			{ top: ['b'], bottom: ['c'] },
 		]
 
-		const program = 'a'
+		const value = 'a'
 
-		const result = run(rules, program)
+		const result = run({ rules, value })
 
 		expect(result).toEqual([{
 			path: [0, 1],
@@ -24,9 +26,9 @@ describe('Core', () => {
 			{ top: [['if', 'false', 'then', 0, 'else', 1]], bottom: [1] },
 		]
 
-		const program = ['if', 'true', 'then', 'a', 'else', 'b']
+		const value = ['if', 'true', 'then', 'a', 'else', 'b']
 
-		const result = run(rules, program)
+		const result = run({ rules, value })
 
 		expect(result).toEqual([{
 			path: [0],
@@ -34,9 +36,9 @@ describe('Core', () => {
 			value: 'a',
 		}])
 
-		const program2 = ['if', 'false', 'then', 'a', 'else', 'b']
+		const value2 = ['if', 'false', 'then', 'a', 'else', 'b']
 
-		const result2 = run(rules, program2)
+		const result2 = run({ rules, value: value2 })
 
 		expect(result2).toEqual([{
 			path: [1],
@@ -51,8 +53,8 @@ describe('Core', () => {
 			{ top: [['+', ['S', 0], 1]], bottom: [['S', ['+', 0, 1]]] },
 		]
 
-		const program = ['+', ['S', ['S', 'Z']], ['S', ['S', 'Z']]]
-		const result = run(rules, program)
+		const value = ['+', ['S', ['S', 'Z']], ['S', ['S', 'Z']]]
+		const result = run({ rules, value })
 		console.log(result.map((x) => JSON.stringify(x)).join('\n'))
 	})
 })

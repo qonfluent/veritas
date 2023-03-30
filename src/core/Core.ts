@@ -1,11 +1,10 @@
-export type Value = number | string | Value[]
-export type Rule = { top: Value[], bottom: Value[] }
-export type Env = (Value | undefined)[]
+import { Value, Rule, Program } from './AST'
 
-export type UnifiyState = { lhs: Value, rhs: Value }
-export type RuleState = { env: Env, unifiers: UnifiyState[], ruleIndex: number }
-export type CycleState = { rules: Rule[], value: Value, path: number[], pending: RuleState[], complete: { ruleIndex: number, value: Value }[] }
-export type ProgramResult = { path: number[], rules: Rule[], value: Value }
+export type Env = (Value | undefined)[]
+export type UnifyState = { lhs: Value, rhs: Value }
+export type RuleState = { env: Env, unifiers: UnifyState[], ruleIndex: number }
+export type ProgramResult = Program & { path: number[] }
+export type CycleState = ProgramResult & { pending: RuleState[], complete: { ruleIndex: number, value: Value }[] }
 export type ProgramState = { cycles: CycleState[], complete: ProgramResult[] }
 
 function spawnPending(rules: Rule[], value: Value): RuleState[] {
@@ -65,22 +64,24 @@ export function step(prog: ProgramState): void {
 	prog.cycles.push(cycle)
 }
 
-export function run(rules: Rule[], value: Value): ProgramResult[] {
-	const prog: ProgramState = {
+export function run(prog: Program): ProgramResult[] {
+	const state: ProgramState = {
 		cycles: [{
-			rules,
-			value,
+			...prog,
 			path: [],
-			pending: rules.map((rule, i) => ({ env: [], unifiers: rule.top.map((v) => ({ lhs: value, rhs: v })), ruleIndex: i })),
+			pending: prog.rules.map((rule, i) => ({ env: [], unifiers: rule.top.map((v) => ({ lhs: prog.value, rhs: v })), ruleIndex: i })),
 			complete: [],
 		}],
 		complete: [],
 	}
 
-	while (prog.cycles.length > 0) {
-		step(prog)
-		console.log(JSON.stringify(prog))
+	let steps = 0
+	while (state.cycles.length > 0) {
+		step(state)
+		steps++
 	}
 
-	return prog.complete
+	console.log(`Ran ${steps} steps`)
+
+	return state.complete
 }
