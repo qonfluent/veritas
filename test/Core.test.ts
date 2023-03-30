@@ -44,4 +44,15 @@ describe('Core', () => {
 			value: 'b',
 		}])
 	})
+
+	it('Can run peano arithmetic', () => {
+		const rules: Rule[] = [
+			{ top: [['+', 'Z', 0]], bottom: [0] },
+			{ top: [['+', ['S', 0], 1]], bottom: [['S', ['+', 0, 1]]] },
+		]
+
+		const program = ['+', ['S', ['S', 'Z']], ['S', ['S', 'Z']]]
+		const result = run(rules, program)
+		console.log(result.map((x) => JSON.stringify(x)).join('\n'))
+	})
 })

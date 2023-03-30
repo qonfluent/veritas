@@ -8,6 +8,12 @@ export type CycleState = { rules: Rule[], value: Value, path: number[], pending:
 export type ProgramResult = { path: number[], rules: Rule[], value: Value }
 export type ProgramState = { cycles: CycleState[], complete: ProgramResult[] }
 
+function spawnPending(rules: Rule[], value: Value): RuleState[] {
+	const applied = rules.flatMap((rule, ruleIndex): RuleState => ({ env: [], unifiers: rule.top.map((lhs) => ({ lhs, rhs: value })), ruleIndex }))
+	const innerApplied = value instanceof Array ? value.flatMap((v, i) => spawnPending(rules, v)) : []
+	return applied.concat(innerApplied)
+}
+
 export function step(prog: ProgramState): void {
 	const cycle = prog.cycles.pop()
 	if (!cycle) return
@@ -21,7 +27,7 @@ export function step(prog: ProgramState): void {
 				rules: cycle.rules,
 				value,
 				path: [...cycle.path, ruleIndex],
-				pending: cycle.rules.map((rule, i) => ({ env: [], unifiers: rule.top.map((v) => ({ lhs: value, rhs: v })), ruleIndex: i })),
+				pending: spawnPending(cycle.rules, value),
 				complete: [],
 			})))
 		}
@@ -51,7 +57,7 @@ export function step(prog: ProgramState): void {
 		if (lhs === rhs) cycle.pending.push({ env, unifiers, ruleIndex })
 		else if (typeof lhs === 'number') bind(lhs, rhs)
 		else if (typeof rhs === 'number') bind(rhs, lhs)
-		else if (lhs instanceof Array && rhs instanceof Array) {
+		else if (lhs instanceof Array && rhs instanceof Array && lhs.length === rhs.length) {
 			cycle.pending.push({ env, unifiers: lhs.map((l, i) => ({ lhs: l, rhs: rhs[i] })).concat(unifiers), ruleIndex })
 		}
 	}
