@@ -4,14 +4,17 @@ export type Program = { rules: Rule[], value: Value }
 
 export type Env = (Value | undefined)[]
 export type UnifyState = { lhs: Value, rhs: Value }
-export type RuleState = { env: Env, unifiers: UnifyState[], ruleIndex: number }
+export type RuleState = { env: Env, unifiers: UnifyState[], ruleIndex: number, ctx: number[] }
 export type ProgramResult = Program & { path: number[] }
 export type CycleState = ProgramResult & { pending: RuleState[], complete: { ruleIndex: number, value: Value }[] }
 export type ProgramState = { cycles: CycleState[], complete: ProgramResult[] }
 
-function spawnPending(rules: Rule[], value: Value): RuleState[] {
-	const applied = rules.flatMap((rule, ruleIndex): RuleState => ({ env: [], unifiers: rule.top.map((lhs) => ({ lhs, rhs: value })), ruleIndex }))
-	const innerApplied = value instanceof Array ? value.flatMap((v, i) => spawnPending(rules, v)) : []
+function spawnPending(prog: Program): RuleState[] {
+	const applied = prog.rules.flatMap((rule, ruleIndex): RuleState => ({ env: [], unifiers: rule.top.map((lhs) => ({ lhs, rhs: prog.value })), ruleIndex, ctx: [] }))
+	const innerApplied = prog.value instanceof Array ? prog.value.flatMap((v, i) => {
+		const inner = spawnPending({ rules: prog.rules, value: v })
+		return inner.map((state) => ({ ...state, ctx: [...state.ctx, i] }))
+	}) : []
 	return applied.concat(innerApplied)
 }
 
@@ -28,7 +31,7 @@ export function step(prog: ProgramState): void {
 				rules: cycle.rules,
 				value,
 				path: [...cycle.path, ruleIndex],
-				pending: spawnPending(cycle.rules, value),
+				pending: spawnPending({ rules: cycle.rules, value }),
 				complete: [],
 			})))
 		}
@@ -46,20 +49,32 @@ export function step(prog: ProgramState): void {
 		// @ts-ignore
 		if (value instanceof Array && value.flat(2**31 - 1).indexOf(varNum) !== -1) return
 		env[varNum] = value
-		cycle.pending.push({ env, unifiers, ruleIndex })
+		cycle.pending.push({ env, unifiers, ruleIndex, ctx: rule.ctx })
 	}
 
-	const { env, unifiers, ruleIndex } = rule
+	const inject = (base: Value, path: number[], value: Value): Value => {
+		if (path.length === 0) return value
+		else if (base instanceof Array) {
+			const [i, ...rest] = path
+			return base.map((v, j) => j === i ? inject(v, rest, value) : v)
+		} else throw new Error('Cannot inject into non-array')
+	}
+
+	const { env, unifiers, ruleIndex, ctx } = rule
 	const unifier = unifiers.pop()
 	if (!unifier) {
-		cycle.complete.push(...cycle.rules[ruleIndex].bottom.map((value) => ({ ruleIndex, value: expand(env, value) })))
+		cycle.complete.push(...cycle.rules[ruleIndex].bottom.map((bottom) => {
+			const expanded = expand(env, bottom)
+			const value = inject(cycle.value, ctx, expanded)
+			return { ruleIndex, value }
+		}))
 	} else {
 		const [lhs, rhs] = [unifier.lhs, unifier.rhs].map((v) => expand(env, v))
-		if (lhs === rhs) cycle.pending.push({ env, unifiers, ruleIndex })
+		if (lhs === rhs) cycle.pending.push({ env, unifiers, ruleIndex, ctx: rule.ctx })
 		else if (typeof lhs === 'number') bind(lhs, rhs)
 		else if (typeof rhs === 'number') bind(rhs, lhs)
 		else if (lhs instanceof Array && rhs instanceof Array && lhs.length === rhs.length) {
-			cycle.pending.push({ env, unifiers: lhs.map((l, i) => ({ lhs: l, rhs: rhs[i] })).concat(unifiers), ruleIndex })
+			cycle.pending.push({ env, unifiers: lhs.map((l, i) => ({ lhs: l, rhs: rhs[i] })).concat(unifiers), ruleIndex, ctx: rule.ctx })
 		}
 	}
 
@@ -71,7 +86,7 @@ export function run(prog: Program): ProgramResult[] {
 		cycles: [{
 			...prog,
 			path: [],
-			pending: spawnPending(prog.rules, prog.value),
+			pending: spawnPending(prog),
 			complete: [],
 		}],
 		complete: [],

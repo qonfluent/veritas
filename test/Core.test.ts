@@ -54,6 +54,10 @@ describe('Core', () => {
 
 		const value = ['+', ['S', ['S', 'Z']], ['S', ['S', 'Z']]]
 		const result = run({ rules, value })
-		console.log(result.map((x) => JSON.stringify(x)).join('\n'))
+		expect(result).toEqual([{
+			path: [1, 1, 0],
+			rules,
+			value: ['S', ['S', ['S', ['S', 'Z']]]],
+		}])
 	})
 })
