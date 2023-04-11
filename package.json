@@ -10,6 +10,7 @@
   "author": "",
   "license": "AGPL3",
   "dependencies": {
+    "@docknetwork/crypto-wasm": "^0.16.0"
   },
   "devDependencies": {
     "@types/jest": "^26.0.14",
