@@ -22,19 +22,14 @@ export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
 	): void {
 		if (message instanceof SpawnMessage) {
 			this._spawn(message.moduleId)
-		} else if (message instanceof KillThreadMessage) {
+		} else if (message instanceof NodeKillThreadMessage) {
 			this._kill(message.threadId)
 		} else if (message instanceof LoadModuleMessage) {
 			this._modules[message.module.id.toString()] = message.module
 		} else if (message instanceof UnloadModuleMessage) {
 			delete this._modules[message.moduleId.toString()]
 		} else if (message instanceof ThreadDataMessage) {
-			const thread = this._threads[message.threadId.toString()]
-			if (!thread) {
-				throw new Error(`Thread ${message.threadId} not found`)
-			}
-
-			thread.send(message)
+			this._send(message)
 		} else {
 			throw new Error(`Unknown message type ${message}`)
 		}
@@ -62,7 +57,7 @@ export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
 		})
 		this._threads[thread.id.toString()] = thread
 
-		this._handlers.forEach(handler => handler(new ThreadSpawnedMessage(thread.id)))
+		this._handlers.forEach(handler => handler(new NodeThreadSpawnedMessage(this.id, thread.id)))
 	}
 
 	private _kill(
@@ -77,6 +72,17 @@ export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
 		delete this._threads[threadId.toString()]
 
 		this._handlers.forEach(handler => handler(new NodeThreadKilledMessage(this.id, threadId)))
+	}
+
+	private _send(
+		message: ThreadDataMessage,
+	): void {
+		const thread = this._threads[message.threadId.toString()]
+		if (!thread) {
+			throw new Error(`Thread ${message.threadId} not found`)
+		}
+
+		thread.send(message)
 	}
 }
 
@@ -105,8 +111,9 @@ export class SpawnMessage extends NodeMessage {
 		super()
 	}
 }
-export class KillThreadMessage extends NodeMessage {
+export class NodeKillThreadMessage extends NodeMessage {
 	public constructor(
+		public readonly nodeId: NodeID,
 		public readonly threadId: ThreadID,
 	) {
 		super()
@@ -115,8 +122,9 @@ export class KillThreadMessage extends NodeMessage {
 
 // Messages from the node
 export class NodeResponseMessage extends Message {}
-export class ThreadSpawnedMessage extends NodeResponseMessage {
+export class NodeThreadSpawnedMessage extends NodeResponseMessage {
 	public constructor(
+		public readonly nodeId: NodeID,
 		public readonly threadId: ThreadID,
 	) {
 		super()

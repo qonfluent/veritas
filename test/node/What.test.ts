@@ -1,6 +1,6 @@
 import { Module } from '../../src/Module'
-import { LoadModuleMessage, Node, ThreadSpawnedMessage, SpawnMessage, KillThreadMessage, NodeThreadKilledMessage } from '../../src/Node'
-import { ThreadDataMessage, ThreadDataResponseMessage, ThreadKilledMessage } from '../../src/Thread'
+import { LoadModuleMessage, Node, SpawnMessage, NodeThreadKilledMessage, NodeKillThreadMessage, NodeThreadSpawnedMessage } from '../../src/Node'
+import { ThreadDataMessage, ThreadDataResponseMessage } from '../../src/Thread'
 
 describe('What', () => {
 	it('should work', async () => {
@@ -10,7 +10,8 @@ describe('What', () => {
 		let threadId = ''
 		let spawned = new Promise<void>((resolve) => {
 			node.receive(message => {
-				if (message instanceof ThreadSpawnedMessage) {
+				if (message instanceof NodeThreadSpawnedMessage) {
+					expect(message.nodeId.toString()).toEqual(node.id)
 					threadId = message.threadId.toString()
 					resolve()
 				}
@@ -41,7 +42,7 @@ describe('What', () => {
 		await spawned
 		node.send(new ThreadDataMessage(threadId, 'echo'))
 		await echoed
-		node.send(new KillThreadMessage(threadId))
+		node.send(new NodeKillThreadMessage(node.id, threadId))
 		await killed
 	})
 })
