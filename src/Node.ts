@@ -1,22 +1,13 @@
-import { Duplex, ID, Message } from './Common'
+import { Duplex, Message } from './Common'
 import { Module, ModuleID } from './Module'
-import { Thread, ThreadID } from './Thread'
+import { Thread, ThreadDataMessage, ThreadDataResponseMessage, ThreadID } from './Thread'
 
-export class NodeID implements ID {
-	public constructor(
-		private readonly _id: string,
-	) {}
-
-	public toString(): string {
-		return `node/${this._id}`
-	}
-}
+export type NodeID = string
 
 export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
-	private _nonce: number = 0
 	private readonly _modules: Record<string, Module> = {}
 	private readonly _threads: Record<string, Thread> = {}
-	private readonly _handlers: ((message: NodeMessage) => void)[] = []
+	private readonly _handlers: ((message: NodeResponseMessage) => void)[] = []
 
 	public constructor(
 		private readonly _id: NodeID,
@@ -29,36 +20,23 @@ export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
 	public send(
 		message: NodeMessage,
 	): void {
-		try {
-			if (message instanceof SpawnMessage) {
-				const module = this._modules[message.moduleId.toString()]
-				if (!module) {
-					throw new Error(`Module ${message.moduleId} not found`)
-				}
-
-				const thread = new Thread(this, module, this._nonce++)
-				this._threads[thread.id.toString()] = thread
-
-				this._handlers.forEach(handler => handler(new NodeSpawnedMessage(thread.id)))
-			} else if (message instanceof KillThreadMessage) {
-				const thread = this._threads[message.threadId.toString()]
-				if (!thread) {
-					throw new Error(`Thread ${message.threadId} not found`)
-				}
-
-				thread.kill(false)
-				delete this._threads[message.threadId.toString()]
-
-				this._handlers.forEach(handler => handler(new NodeThreadKilledMessage(thread.id)))
-			} else if (message instanceof LoadModuleMessage) {
-				this._modules[message.module.id.toString()] = message.module
-			} else if (message instanceof UnloadModuleMessage) {
-				delete this._modules[message.moduleId.toString()]
-			} else {
-				throw new Error(`Unrecognized message type ${message}`)
+		if (message instanceof SpawnMessage) {
+			this._spawn(message.moduleId)
+		} else if (message instanceof KillThreadMessage) {
+			this._kill(message.threadId)
+		} else if (message instanceof LoadModuleMessage) {
+			this._modules[message.module.id.toString()] = message.module
+		} else if (message instanceof UnloadModuleMessage) {
+			delete this._modules[message.moduleId.toString()]
+		} else if (message instanceof ThreadDataMessage) {
+			const thread = this._threads[message.threadId.toString()]
+			if (!thread) {
+				throw new Error(`Thread ${message.threadId} not found`)
 			}
-		} catch (error) {
-			this._handlers.forEach(handler => handler(new NodeErrorMessage(error)))
+
+			thread.send(message)
+		} else {
+			throw new Error(`Unknown message type ${message}`)
 		}
 	}
 
@@ -67,12 +45,46 @@ export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
 	): void {
 		this._handlers.push(handler)
 	}
+
+	private _spawn(
+		moduleId: ModuleID,
+	): void {
+		const module = this._modules[moduleId.toString()]
+		if (!module) {
+			throw new Error(`Module ${moduleId} not found`)
+		}
+
+		const thread = new Thread(this, module)
+		thread.receive(message => {
+			if (message instanceof ThreadDataResponseMessage) {
+				this._handlers.forEach(handler => handler(message))
+			}
+		})
+		this._threads[thread.id.toString()] = thread
+
+		this._handlers.forEach(handler => handler(new ThreadSpawnedMessage(thread.id)))
+	}
+
+	private _kill(
+		threadId: ThreadID,
+	): void {
+		const thread = this._threads[threadId.toString()]
+		if (!thread) {
+			throw new Error(`Thread ${threadId} not found`)
+		}
+
+		thread.kill(false)
+		delete this._threads[threadId.toString()]
+
+		this._handlers.forEach(handler => handler(new NodeThreadKilledMessage(this.id, threadId)))
+	}
 }
 
 // Messages to the node
 export class NodeMessage extends Message {}
 export class LoadModuleMessage extends NodeMessage {
 	public constructor(
+		public readonly nodeId: NodeID,
 		public readonly module: Module,
 	) {
 		super()
@@ -87,6 +99,7 @@ export class UnloadModuleMessage extends NodeMessage {
 }
 export class SpawnMessage extends NodeMessage {
 	public constructor(
+		public readonly nodeId: NodeID,
 		public readonly moduleId: ModuleID,
 	) {
 		super()
@@ -102,23 +115,17 @@ export class KillThreadMessage extends NodeMessage {
 
 // Messages from the node
 export class NodeResponseMessage extends Message {}
-export class NodeSpawnedMessage extends NodeResponseMessage {
+export class ThreadSpawnedMessage extends NodeResponseMessage {
 	public constructor(
-		public readonly id: ThreadID,
+		public readonly threadId: ThreadID,
 	) {
 		super()
 	}
 }
 export class NodeThreadKilledMessage extends NodeResponseMessage {
 	public constructor(
-		public readonly id: ThreadID,
-	) {
-		super()
-	}
-}
-export class NodeErrorMessage extends NodeResponseMessage {
-	public constructor(
-		public readonly error: unknown,
+		public readonly nodeId: NodeID,
+		public readonly threadId: ThreadID,
 	) {
 		super()
 	}

@@ -3,8 +3,4 @@ export interface Duplex<Send, Recv = Send> {
 	receive(handler: (message: Recv) => void): void
 }
 
-export interface ID {
-	toString(): string
-}
-
 export class Message {}

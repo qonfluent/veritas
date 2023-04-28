@@ -1,46 +1,28 @@
+import crypto from 'crypto'
 import { Worker } from 'worker_threads'
-import { Duplex, ID } from './Common'
-import { Module, ModuleID } from './Module'
-import { KillThreadMessage, Node, NodeID } from './Node'
+import { Duplex } from './Common'
+import { Module } from './Module'
+import { KillThreadMessage, Node } from './Node'
 
-export class ThreadID implements ID {
-	public constructor(
-		private readonly _node: NodeID,
-		private readonly _module: ModuleID,
-		private readonly _id: number,
-	) {}
-
-	public toString(): string {
-		return `${this._node.toString()}/thread/${this._module.toString()}/${this._id}`
-	}
-
-	public get node(): NodeID {
-		return this._node
-	}
-
-	public get module(): ModuleID {
-		return this._module
-	}
-
-	public get id(): number {
-		return this._id
-	}
-}
+export type ThreadID = string
 
 export class Thread implements Duplex<ThreadMessage, ThreadResponseMessage> {
 	private readonly _id: ThreadID
 	private readonly _worker: Worker
-	private readonly _handlers: ((message: ThreadMessage) => void)[] = []
+	private readonly _handlers: ((message: ThreadResponseMessage) => void)[] = []
 
 	public constructor(
 		private readonly _node: Node,
 		private readonly _base: Module,
-		nonce: number,
 	) {
-		this._id = new ThreadID(_node.id, _base.id, nonce)
+		const nonce = crypto.randomBytes(16).toString('hex')
+		const path = `${_node.id}/${_base.id}/${nonce}`
+		const hash = crypto.createHash('sha256').update(path).digest('hex')
+		this._id = `thread/sha256-${hash}`
+		
 		this._worker = new Worker(_base.code, { eval: true })
-		this._worker.on('message', (message: ThreadMessage) => {
-			this._handlers.forEach(handler => handler(message))
+		this._worker.on('message', (message: ThreadDataResponseMessage) => {
+			this._handlers.forEach(handler => handler(new ThreadDataResponseMessage(message.threadId, message.data)))
 		})
 	}
 
@@ -73,21 +55,37 @@ export class Thread implements Duplex<ThreadMessage, ThreadResponseMessage> {
 	}
 }
 
-export class ThreadMessage {}
+export class ThreadMessage {
+	public constructor(
+		public readonly threadId: ThreadID,
+	) {}
+}
 export class ThreadDataMessage extends ThreadMessage {
+	public constructor(
+		threadId: ThreadID,
+		public readonly data: any,
+	) {
+		super(threadId)
+	}
+}
+
+export class ThreadResponseMessage {
+	public constructor(
+		public readonly threadId: ThreadID,
+	) {}
+}
+export class ThreadKilledMessage extends ThreadResponseMessage {
+	public constructor(
+		threadId: ThreadID,
+	) {
+		super(threadId)
+	}
+}
+export class ThreadDataResponseMessage extends ThreadResponseMessage {
 	public constructor(
 		public readonly threadId: ThreadID,
 		public readonly data: any,
 	) {
-		super()
-	}
-}
-
-export class ThreadResponseMessage {}
-export class ThreadKilledMessage extends ThreadResponseMessage {
-	public constructor(
-		public readonly threadId: ThreadID,
-	) {
-		super()
+		super(threadId)
 	}
 }
