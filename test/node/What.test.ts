@@ -1,5 +1,5 @@
 import { Module } from '../../src/Module'
-import { LoadModuleMessage, Node, SpawnMessage, NodeThreadKilledMessage, NodeKillThreadMessage, NodeThreadSpawnedMessage } from '../../src/Node'
+import { LoadModuleMessage, Node, SpawnMessage, NodeThreadKilledMessage, NodeKillThreadMessage, NodeThreadSpawnedMessage, UnloadModuleMessage, NodeThreadDataMessage, NodeThreadDataResponseMessage } from '../../src/Node'
 import { ThreadDataMessage, ThreadDataResponseMessage } from '../../src/Thread'
 
 describe('What', () => {
@@ -20,7 +20,7 @@ describe('What', () => {
 
 		let echoed = new Promise<void>((resolve) => {
 			node.receive(message => {
-				if (message instanceof ThreadDataResponseMessage) {
+				if (message instanceof NodeThreadDataResponseMessage) {
 					expect(message.data).toEqual('echo')
 					resolve()
 				}
@@ -40,9 +40,11 @@ describe('What', () => {
 		node.send(new LoadModuleMessage(node.id, module))
 		node.send(new SpawnMessage(node.id, module.id))
 		await spawned
-		node.send(new ThreadDataMessage(threadId, 'echo'))
+		node.send(new NodeThreadDataMessage(node.id, threadId, 'echo'))
 		await echoed
 		node.send(new NodeKillThreadMessage(node.id, threadId))
 		await killed
+		node.send(new UnloadModuleMessage(module.id))
+		expect(() => node.send(new SpawnMessage(node.id, module.id))).toThrow()
 	})
 })

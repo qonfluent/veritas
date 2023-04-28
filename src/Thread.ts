@@ -37,7 +37,7 @@ export class Thread implements Duplex<ThreadMessage, ThreadResponseMessage> {
 	public kill(sendToNode = true): void {
 		this._worker.terminate()
 		this._handlers.forEach(handler => handler(new ThreadKilledMessage(this._id)))
-		
+
 		if (sendToNode) {
 			this._node.send(new NodeKillThreadMessage(this._node.id, this._id))
 		}

@@ -28,10 +28,10 @@ export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
 			this._modules[message.module.id.toString()] = message.module
 		} else if (message instanceof UnloadModuleMessage) {
 			delete this._modules[message.moduleId.toString()]
-		} else if (message instanceof ThreadDataMessage) {
-			this._send(message)
+		} else if (message instanceof NodeThreadDataMessage) {
+			this._send(new ThreadDataMessage(message.threadId, message.data))
 		} else {
-			throw new Error(`Unknown message type ${message}`)
+			throw new Error(`Unknown message type ${message.type}`)
 		}
 	}
 
@@ -50,9 +50,9 @@ export class Node implements Duplex<NodeMessage, NodeResponseMessage> {
 		}
 
 		const thread = new Thread(this, module)
-		thread.receive(message => {
+		thread.receive((message) => {
 			if (message instanceof ThreadDataResponseMessage) {
-				this._handlers.forEach(handler => handler(message))
+				this._handlers.forEach(handler => handler(new NodeThreadDataResponseMessage(this.id, thread.id, message.data)))
 			}
 		})
 		this._threads[thread.id.toString()] = thread
@@ -119,6 +119,15 @@ export class NodeKillThreadMessage extends NodeMessage {
 		super()
 	}
 }
+export class NodeThreadDataMessage extends NodeMessage {
+	public constructor(
+		public readonly nodeId: NodeID,
+		public readonly threadId: ThreadID,
+		public readonly data: any,
+	) {
+		super()
+	}
+}
 
 // Messages from the node
 export class NodeResponseMessage extends Message {}
@@ -134,6 +143,15 @@ export class NodeThreadKilledMessage extends NodeResponseMessage {
 	public constructor(
 		public readonly nodeId: NodeID,
 		public readonly threadId: ThreadID,
+	) {
+		super()
+	}
+}
+export class NodeThreadDataResponseMessage extends NodeResponseMessage {
+	public constructor(
+		public readonly nodeId: NodeID,
+		public readonly threadId: ThreadID,
+		public readonly data: any,
 	) {
 		super()
 	}
