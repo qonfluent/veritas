@@ -1,0 +1,45 @@
+@startuml Big Picture
+
+class Node {}
+
+class Device {}
+
+Node "1" --* "*" Device
+
+class ComputeDevice {
+	spawn(program: Program): ThreadID
+	getThread(thread: ThreadID): Thread
+	current(): ThreadID
+	wait(thread: ThreadID): any
+}
+
+class Thread {
+	id(): ThreadID
+	kill(result: any): void
+	sleep(duration: Duration): void
+	yield(): void
+}
+
+ComputeDevice -up-|> Device
+Thread --> ComputeDevice
+
+class StorageDevice {
+	openSpace(id: StorageSpaceID, opts?: OpenSpaceOptions): StorageSpace
+	clone(device: StorageDevice, target: StorageSpaceID, opts?: CloneOptions): StorageSpace
+}
+
+class StorageSpace {
+	id(): StorageSpaceID
+	delete(): void
+	clear(): void
+	
+	getCapacity(): StorageSize
+	getUsed(): StorageSize
+
+	getTags(): StorageTag[]
+	setTags(tags: StorageTag[]): void
+}
+
+StorageSpace --> StorageDevice
+
+@enduml

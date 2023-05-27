@@ -1,6 +1,5 @@
 import { Module } from '../../src/Module'
 import { LoadModuleMessage, Node, SpawnMessage, NodeThreadKilledMessage, NodeKillThreadMessage, NodeThreadSpawnedMessage, UnloadModuleMessage, NodeThreadDataMessage, NodeThreadDataResponseMessage } from '../../src/Node'
-import { ThreadDataMessage, ThreadDataResponseMessage } from '../../src/Thread'
 
 describe('What', () => {
 	it('should work', async () => {
