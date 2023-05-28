@@ -9,12 +9,12 @@ describe('Test', () => {
 		const node1 = crypto.randomBytes(32)
 		const node2 = crypto.randomBytes(32)
 
-		const block1 = new Block(Date.now(), [node1], Buffer.from('Hello world'), crypto.randomBytes(32))
+		const block1 = new Block(Date.now(), [], pack({ node: node1 }), crypto.randomBytes(32))
 		const id1 = store.add(block1)
 		const cursor1 = store.getCursor()
 		expect(cursor1).toEqual(new Map([[node1, 1]]))
 
-		const block2 = new Block(Date.now(), [node2], Buffer.from('Hello world'), crypto.randomBytes(32))
+		const block2 = new Block(Date.now(), [], pack({ node: node2 }), crypto.randomBytes(32))
 		const id2 = store.add(block2)
 		const cursor2 = store.getCursor()
 		expect(cursor2).toEqual(new Map([[node1, 1], [node2, 1]]))

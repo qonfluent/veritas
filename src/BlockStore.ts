@@ -1,3 +1,4 @@
+import { unpack } from 'msgpackr'
 import { Block, BlockID } from './Block'
 import { NodeID } from './Node'
 import { TimeInstant, TimeInterval, bytesToString } from './Utility'
@@ -19,6 +20,12 @@ export abstract class BlockStore {
 		protected readonly _blockId: (block: Block) => BlockID,
 	) {}
 
+	public abstract getCursor(): Cursor
+	public abstract getHeads(): BlockID[]
+	public abstract hasBlock(id: BlockID): boolean
+	public abstract getBlockData(id: BlockID): BlockData | undefined
+	protected abstract addBlockInner(id: BlockID, parent: NodeID, block: Block): void
+
 	public acceptedTimeRange(): TimeInterval {
 		const offset = 30_000
 		return [Date.now() - offset, Date.now() + offset]
@@ -37,8 +44,14 @@ export abstract class BlockStore {
 		// Validate block format
 		this.validateBlockFormat(block)
 
+		// Validate all parents are unique
+		const parents = new Set(block.parents.map(bytesToString))
+		if (parents.size !== block.parents.length) {
+			throw new Error('Block has duplicate parents')
+		}
+
 		// Validate parents
-		const node = block.parents.length === 1 ? this.validateGenesisBlock(block) : this.validateNormalBlock(block)
+		const node = block.parents.length === 0 ? this.validateGenesisBlock(block) : this.validateNormalBlock(block)
 
 		// Add block
 		this.addBlockInner(id, node, block)
@@ -86,18 +99,6 @@ export abstract class BlockStore {
 		return blockIDs.map((id) => this.getBlockData(id)!.block)
 	}
 
-	public abstract getCursor(): Cursor
-	public abstract getHeads(): BlockID[]
-	public abstract hasBlock(id: BlockID): boolean
-	public abstract getBlockData(id: BlockID): BlockData | undefined
-	protected abstract addBlockInner(id: BlockID, parent: NodeID, block: Block): void
-
-	private addPending(block: Block): void {
-		const pending = this._pendingBlocks.get(block.timestamp) ?? []
-		pending.push(block)
-		this._pendingBlocks.set(block.timestamp, pending)
-	}
-
 	public processPending(): void {
 		// Get min timestamp
 		const [min] = this.acceptedTimeRange()
@@ -130,6 +131,12 @@ export abstract class BlockStore {
 		}
 	}
 
+	private addPending(block: Block): void {
+		const pending = this._pendingBlocks.get(block.timestamp) ?? []
+		pending.push(block)
+		this._pendingBlocks.set(block.timestamp, pending)
+	}
+
 	// Validate all the things about the block that don't require access to the store
 	private validateBlockFormat(block: Block): void {
 		// Validate timestamp
@@ -139,22 +146,13 @@ export abstract class BlockStore {
 		}
 
 		// Validate signature
-		// TODO
-
-		// Validate parents
-		if (block.parents.length === 0) {
-			throw new Error('Block has no parents')
-		}
+		// TODO: Validate signature
 	}
 
 	private validateGenesisBlock(block: Block): NodeID {
-		// Check if parent exists
-		const parent = block.parents[0]
-		if (this.hasBlock(parent)) {
-			throw new Error(`Parent block ${bytesToString(parent)} already exists`)
-		}
-
-		return parent
+		// Decode block data to get join request
+		const joinRequest = unpack(block.data) as { node: NodeID }
+		return joinRequest.node
 	}
 
 	private validateNormalBlock(block: Block): NodeID {
