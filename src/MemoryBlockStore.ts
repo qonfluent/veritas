@@ -24,6 +24,20 @@ export class MemoryBlockStore extends BlockStore {
 		return this._blocks.get(id)
 	}
 
+	public getBlockByIndex(node: NodeID, index: number): Block | undefined {
+		const blocks = this._nodeIndex.get(node)
+		if (blocks === undefined) {
+			return undefined
+		}
+
+		const id = blocks[index]
+		if (id === undefined) {
+			return undefined
+		}
+
+		return this._blocks.get(id)?.block
+	}
+
 	public getCursor(): Cursor {
 		return new Map([...this._nodeIndex.entries()].map(([node, blocks]) => [node, blocks.length]))
 	}

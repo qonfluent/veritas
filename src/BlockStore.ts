@@ -24,6 +24,7 @@ export abstract class BlockStore {
 	public abstract getHeads(): BlockID[]
 	public abstract hasBlock(id: BlockID): boolean
 	public abstract getBlockData(id: BlockID): BlockData | undefined
+	public abstract getBlockByIndex(node: NodeID, index: number): Block | undefined
 	protected abstract addBlockInner(id: BlockID, parent: NodeID, block: Block): void
 
 	public acceptedTimeRange(): TimeInterval {
