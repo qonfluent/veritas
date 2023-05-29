@@ -1,4 +1,4 @@
-import { AnyProtocol } from '../Protocol'
+import { AnyProtocol, IProtocolManager } from '../Protocol'
 import { Ref } from '../../Utility'
 import { IService } from '../Service'
 
@@ -8,11 +8,11 @@ export type ProtocolExchangeRequestMessage = {
 }
 
 export type ProtocolExchangeResponseMessage = {
-	// The list of protocols agree to use
+	// The list of protocols they support
 	protocols: Ref<AnyProtocol>[]
 }
 
 export interface IProtocolExchangeService extends IService {
-	// Exchange our protocols with the remote, returning the selected protocols in the order they should be applied
-	initiate(protocols: Ref<AnyProtocol>[]): Promise<Ref<AnyProtocol>[]>
+	// The protocol manager to use
+	get protocolManager(): IProtocolManager
 }

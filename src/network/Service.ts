@@ -18,7 +18,7 @@ export interface IService {
 	closeAll(): void
 }
 
-export interface ServiceManager {
+export interface IServiceManager {
 	// The list of services
 	get services(): IService[]
 

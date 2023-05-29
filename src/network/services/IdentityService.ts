@@ -55,5 +55,5 @@ export type IdentityResponseMessage = {
 
 export interface IIdentityService extends IService {
 	// Get the identity of a connection
-	getIdentity(connection: IConnection): Promise<Identity>
+	getIdentity(connection: Ref<IConnection>): Promise<Identity>
 }

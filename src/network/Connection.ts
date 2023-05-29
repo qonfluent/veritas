@@ -17,6 +17,9 @@ export interface IConnection {
 	// The remote address of the connection
 	get remoteAddress(): Ref<Location>
 
+	// Whether the connection was locally initiated
+	get initiator(): boolean
+
 	// Send a message to the remote peer
 	send(msg: Uint8Array): void
 

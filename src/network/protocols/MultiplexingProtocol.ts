@@ -1,9 +1,7 @@
 import { IConnection } from '../Connection'
 import { IProtocol } from '../Protocol'
 
-export type MultiplexingOptions = {
-	initialStreams?: number
-}
+export type MultiplexingOptions = {}
 
 export interface IMultiplexingProtocol extends IProtocol<MultiplexingOptions, IMultiplexedConnection> {}
 

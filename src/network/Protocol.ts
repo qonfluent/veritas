@@ -25,8 +25,8 @@ export interface IProtocolManager {
 	removeProtocol(protocol: Ref<AnyProtocol>): void
 
 	// Get a protocol
-	getProtocol(protocol: Ref<AnyProtocol>): Promise<AnyProtocol>
+	getProtocol(protocol: Ref<AnyProtocol>): AnyProtocol
 
 	// Given a set of protocols, select the preferred set
-	select(protocols: Ref<AnyProtocol>[]): Promise<Ref<AnyProtocol>[]>
+	select(protocols: Ref<AnyProtocol>[]): Ref<AnyProtocol>[]
 }
