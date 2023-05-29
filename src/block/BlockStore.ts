@@ -1,4 +1,5 @@
 import { pack, unpack } from 'msgpackr'
+import { HashFn, SignatureVerifierFn } from '../crypto/Types'
 import { Identity } from '../network/services/IdentityService'
 import { bytesToString, Ref } from '../Utility'
 
@@ -22,9 +23,12 @@ export type BlockData = {
 }
 
 export abstract class BlockStore {
+	protected _latestCompleteRow = -1
+
 	public constructor(
-		protected readonly _hash: (data: Uint8Array) => Uint8Array,
-		protected readonly _verify: (publicKey: Uint8Array, data: Uint8Array, signature: Uint8Array) => boolean,
+		protected readonly _hash: HashFn,
+		protected readonly _verify: SignatureVerifierFn,
+		protected readonly _validateJoin: (joinRequest: JoinRequest) => void,
 	) {}
 
 	public abstract getCursor(): Cursor
@@ -106,9 +110,39 @@ export abstract class BlockStore {
 		return blockIDs.map((id) => this.getBlockData(id)!.block)
 	}
 
+	public getLatestCompleteRow(threshold: number): number {
+		// Get cursor
+		const cursor = this.getCursor()
+
+		// Find the max index
+		const maxIndex = [...cursor.values()].reduce((max, index) => Math.max(max, index), 0)
+
+		// Get the set of nodes
+		const nodes = [...cursor.keys()]
+
+		// Calculate the minimum number of nodes that must be in the row
+		const minCount = Math.ceil(nodes.length * threshold)
+
+		// Scan backswards until we find a row that is complete
+		for (let i = maxIndex; i >= this._latestCompleteRow; i--) {
+			// Check if this row is complete
+			const rowCount = nodes.reduce((count, node) => count + (this.getBlockByIndex(node, i) === undefined ? 0 : 1), 0)
+			if (rowCount >= minCount) {
+				return i
+			}
+		}
+
+		// No complete row found
+		return this._latestCompleteRow
+	}
+
 	private validateGenesisBlock(block: Block): Ref<Identity> {
 		// Decode block data to get join request
 		const joinRequest = unpack(block.data) as JoinRequest
+
+		// Validate join request
+		this._validateJoin(joinRequest)
+
 		return joinRequest.identity.id
 	}
 

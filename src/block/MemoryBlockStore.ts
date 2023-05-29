@@ -1,6 +1,6 @@
 import { HashFn, SignatureVerifierFn } from '../crypto/Types'
 import { Ref } from '../Utility'
-import { BlockStore, BlockData, Cursor, Block } from './BlockStore'
+import { BlockStore, BlockData, Cursor, Block, JoinRequest } from './BlockStore'
 
 export type NodeID = Uint8Array
 
@@ -11,8 +11,9 @@ export class MemoryBlockStore extends BlockStore {
 	public constructor(
 		hash: HashFn,
 		verify: SignatureVerifierFn,
+		validateJoin: (joinRequest: JoinRequest) => void,
 	) {
-		super(hash, verify)
+		super(hash, verify, validateJoin)
 	}
 
 	public getHeads(): Ref<Block>[] {
