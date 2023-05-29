@@ -1,12 +1,7 @@
-import { Ref } from '../Ref'
+import { Block, Cursor } from '../../block/BlockStore'
+import { Ref } from '../../Utility'
 import { IService } from '../Service'
 import { Identity } from './IdentityService'
-
-export type Block = {
-	parents: Ref<Block>[]
-	body: Uint8Array
-	signature: Uint8Array
-}
 
 export type BlockPushMessage = {
 	// The blocks to push
@@ -15,7 +10,7 @@ export type BlockPushMessage = {
 
 export type BlockPullMessage = {
 	// The cursor to pull after
-	cursor: Map<Ref<Identity>, number>
+	cursor: Cursor
 }
 
 export interface IBlockService extends IService {

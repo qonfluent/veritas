@@ -1,5 +1,5 @@
 import { IConnection } from './Connection'
-import { Ref } from './Ref'
+import { Ref } from '../Utility'
 
 export type AnyProtocol = IProtocol<any, any>
 

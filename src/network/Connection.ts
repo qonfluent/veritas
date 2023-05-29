@@ -1,4 +1,4 @@
-import { Ref, Location } from './Ref'
+import { Ref, Location } from '../Utility'
 import { ITransport } from './Transport'
 
 export interface IConnection {

@@ -1,5 +1,5 @@
 import { AnyProtocol } from '../Protocol'
-import { Ref } from '../Ref'
+import { Ref } from '../../Utility'
 import { IService } from '../Service'
 
 export type ProtocolExchangeRequestMessage = {

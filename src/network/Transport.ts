@@ -1,4 +1,4 @@
-import { Ref, Location } from './Ref'
+import { Ref, Location } from '../Utility'
 import { IConnection, IListener } from './Connection'
 
 export type DialOptions = {

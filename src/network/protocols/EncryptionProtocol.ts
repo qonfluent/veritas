@@ -1,4 +1,4 @@
-import { KeyPair } from '../../crypto/KeyPair'
+import { KeyPair } from '../../crypto/Types'
 import { IConnection } from '../Connection'
 import { IProtocol } from '../Protocol'
 

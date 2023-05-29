@@ -1,6 +1,6 @@
 import { TimeDuration, TimeInstant } from '../Utility'
 import { Identity } from './services/IdentityService'
-import { Ref, Location } from './Ref'
+import { Ref, Location } from '../Utility'
 
 // A mapping of identities to addresses
 export interface IAddressBook {

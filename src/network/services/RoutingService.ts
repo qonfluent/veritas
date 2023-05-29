@@ -1,6 +1,6 @@
 import { IConnection, IListener } from '../Connection'
 import { Identity } from './IdentityService'
-import { Ref } from '../Ref'
+import { Ref } from '../../Utility'
 import { IDiscoveryService } from './DiscoveryService'
 import { DialOptions, ListenOptions } from '../Transport'
 import { IAddressBook } from '../AddressBook'

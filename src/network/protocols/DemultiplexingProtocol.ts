@@ -1,6 +1,6 @@
 import { IConnection } from '../Connection'
 import { IProtocol } from '../Protocol'
-import { Ref } from '../Ref'
+import { Ref } from '../../Utility'
 
 export type DemultiplexingOptions = {}
 
