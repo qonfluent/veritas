@@ -1,4 +1,4 @@
-import { TimeInstant } from './Utility'
+import { TimeInstant } from '../Utility'
 
 export type BlockID = Uint8Array
 

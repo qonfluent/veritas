@@ -1,0 +1,40 @@
+@startuml
+
+interface IConnection {}
+interface IListener {}
+interface ITransport {}
+
+ITransport --> IConnection
+ITransport --> IListener
+
+interface IProtocol {}
+IProtocol --* IConnection
+
+interface ProtocolExchangeProtocol {}
+ProtocolExchangeProtocol --|> IProtocol
+
+interface EncryptionProtocol {}
+EncryptionProtocol --|> IProtocol
+
+interface AuthenticationProtocol {}
+AuthenticationProtocol --|> IProtocol
+
+interface IdentityProtocol {}
+IdentityProtocol --|> IProtocol
+
+interface ITransportManager {}
+
+ITransportManager --* "*" ITransport
+
+interface IAddressBook {}
+
+interface IRouterConnection {}
+interface IRouterListener {}
+interface IRouter {}
+
+IRouter --* ITransportManager
+IRouter --* IAddressBook
+IRouter --> IRouterConnection
+IRouter --> IRouterListener
+
+@enduml

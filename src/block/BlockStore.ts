@@ -1,7 +1,7 @@
 import { unpack } from 'msgpackr'
 import { Block, BlockID } from './Block'
 import { NodeID } from './Node'
-import { TimeInstant, TimeInterval, bytesToString } from './Utility'
+import { TimeInstant, TimeInterval, bytesToString } from '../Utility'
 
 export type Cursor = Map<NodeID, number>
 

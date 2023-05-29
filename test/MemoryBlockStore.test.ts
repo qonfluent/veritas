@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { pack } from 'msgpackr'
-import { Block } from '../src/Block'
-import { MemoryBlockStore } from '../src/MemoryBlockStore'
+import { Block } from '../src/block/Block'
+import { MemoryBlockStore } from '../src/block/MemoryBlockStore'
 
 describe('Test', () => {
 	it('should work', () => {
