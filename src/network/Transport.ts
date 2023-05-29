@@ -33,6 +33,9 @@ export interface ITransport {
 	// The set of connections for the transport
 	get connections(): IConnection[]
 
+	// The maximum message size for the transport
+	get maxMessageSize(): number
+
 	// Dial a remote address
 	dial(address: Ref<Location>, options?: DialOptions): Promise<IConnection>
 

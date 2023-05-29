@@ -24,7 +24,6 @@
     ]
   },
   "dependencies": {
-    "msgpackr": "^1.9.2",
-    "tiny-typed-emitter": "^2.1.0"
+    "msgpackr": "^1.9.2"
   }
 }

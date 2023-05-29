@@ -1,40 +1,36 @@
 @startuml
 
-interface IConnection {}
-interface IListener {}
-interface ITransport {}
+title Networking Layers
 
-ITransport --> IConnection
-ITransport --> IListener
+package Transformers {
+	class TransportConnection {
+		Tries to send data, but may mangle, drop, or duplicate it
+	}
+	class ReliableConnection {
+		Prevents mangled, dropped, or duplicated data
+	}
+	class DefragmentedConnection {
+		Removes fragmentation limits on message size
+	}
+	class EncryptedConnection {
+		Prevents eavesdropping
+	}
+	class CompressedConnection {
+		Reduces bandwidth usage
+	}
+	class IdentifiedConnection {
+		Identifies the sender and receiver
+	}
+	class MultiplexedConnection {
+		Allows multiple connections to share the same underlying connection
+	}
 
-interface IProtocol {}
-IProtocol --* IConnection
-
-interface ProtocolExchangeProtocol {}
-ProtocolExchangeProtocol --|> IProtocol
-
-interface EncryptionProtocol {}
-EncryptionProtocol --|> IProtocol
-
-interface AuthenticationProtocol {}
-AuthenticationProtocol --|> IProtocol
-
-interface IdentityProtocol {}
-IdentityProtocol --|> IProtocol
-
-interface ITransportManager {}
-
-ITransportManager --* "*" ITransport
-
-interface IAddressBook {}
-
-interface IRouterConnection {}
-interface IRouterListener {}
-interface IRouter {}
-
-IRouter --* ITransportManager
-IRouter --* IAddressBook
-IRouter --> IRouterConnection
-IRouter --> IRouterListener
+	TransportConnection --> ReliableConnection
+	ReliableConnection --> DefragmentedConnection
+	DefragmentedConnection --> EncryptedConnection
+	EncryptedConnection --> CompressedConnection
+	CompressedConnection --> IdentifiedConnection
+	IdentifiedConnection --> MultiplexedConnection
+}
 
 @enduml
