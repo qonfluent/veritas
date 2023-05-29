@@ -1,6 +1,7 @@
 import { IConnection } from '../Connection'
 import { IProtocol } from '../Protocol'
 import { Ref, Service } from '../Ref'
+import { IService } from '../Service'
 
 export type VerificationMethodOrRef = Ref<VerificationMethod> | VerificationMethod
 
@@ -47,14 +48,6 @@ export type ServiceEndpoint
 	| Ref<Service>[] // Service has many endpoints for load balancing
 	| { [purpose: string]: ServiceEndpoint } // Service has many endpoints for different purposes
 
-export type IdentityOptions = {
-	// The local identity
-	localIdentity: Identity
-}
-
-export interface IIdentityProtocol extends IProtocol<IdentityOptions, IIdentifiedConnection> {}
-
-export interface IIdentifiedConnection extends IConnection {
-	get localIdentity(): Identity
-	get remoteIdentity(): Identity
+export interface IIdentityService extends IService {
+	getIdentity(id: Ref<IConnection>): Promise<Identity>
 }

@@ -2,6 +2,9 @@ import { Ref, Location } from './Ref'
 import { ITransport } from './Transport'
 
 export interface IConnection {
+	// The name of the connection
+	get id(): Ref<IConnection>
+
 	// The connection this connection was upgraded from
 	get parent(): Ref<IConnection> | undefined
 
@@ -31,12 +34,6 @@ export interface IListener {
 	// The listener this listener was upgraded from
 	get parent(): Ref<IListener> | undefined
 
-	// The transport this listener is using
-	get transport(): Ref<ITransport>
-
-	// The local address of the listener
-	get localAddress(): Ref<Location>
-
 	// All open connections for this listener
 	get connections(): IConnection[]
 
@@ -47,4 +44,12 @@ export interface IListener {
 	onClose(handler: () => void): void
 
 	close(): void
+}
+
+export interface ITransportListener extends IListener {
+	// The transport this listener is using
+	get transport(): Ref<ITransport>
+
+	// The local address of the listener
+	get localAddress(): Ref<Location>
 }

@@ -9,17 +9,6 @@ export type ListenOptions = {
 	localAddress?: Ref<Location>
 }
 
-export interface TransportEvents {
-	// A new connection is established
-	connection(source: ITransport, connection: IConnection): void
-
-	// An inbound connection is denied
-	inboundDenied(source: ITransport, address: Ref<Location>): void
-
-	// An outbound connection is denied
-	outboundDenied(source: ITransport, address: Ref<Location>): void
-}
-
 export interface ITransport {
 	// The local addresses of the transport
 	get localAddresses(): Ref<Location>[]
@@ -44,6 +33,15 @@ export interface ITransport {
 
 	// Close all connections to a remote address
 	closeConnections(address: Ref<Location>): void
+
+	// Handle new connections
+	onConnection(handler: (connection: IConnection) => void): void
+
+	// Handle inbound connection denials
+	onInboundDenied(handler: (address: Ref<Location>) => void): void
+
+	// Handle outbound connection denials
+	onOutboundDenied(handler: (address: Ref<Location>) => void): void
 
 	// Close all listeners and connections
 	closeAll(): void
