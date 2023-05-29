@@ -48,6 +48,12 @@ export type ServiceEndpoint
 	| Ref<Service>[] // Service has many endpoints for load balancing
 	| { [purpose: string]: ServiceEndpoint } // Service has many endpoints for different purposes
 
+export type IdentityRequestMessage = {}
+
+export type IdentityResponseMessage = {
+	identity: Identity
+}
+
 export interface IIdentityService extends IService {
 	getIdentity(id: Ref<IConnection>): Promise<Identity>
 }

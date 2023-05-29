@@ -1,5 +1,5 @@
-import { TimeInstant } from '../Utility'
-import { Identity } from './protocols/IdentityProtocol'
+import { TimeDuration, TimeInstant } from '../Utility'
+import { Identity } from './services/IdentityService'
 import { Ref, Location } from './Ref'
 
 // A mapping of identities to addresses
@@ -21,6 +21,9 @@ export interface IAddressBook {
 
 	// Get devices from address
 	getIdentities(address: Ref<Location>): Promise<Ref<Identity>[]>
+
+	// Get all active identities based on some liveness cutoff, sorted by last confirmed
+	getActive(cutoff?: TimeDuration): Promise<Ref<Identity>[]>
 
 	// Clear cache
 	clear(before?: TimeInstant): Promise<void>

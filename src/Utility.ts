@@ -1,4 +1,5 @@
 export type TimeInstant = number
+export type TimeDuration = number
 export type TimeInterval = [TimeInstant, TimeInstant]
 
 export function bytesToString(bytes: Uint8Array): string {
