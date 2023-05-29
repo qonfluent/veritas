@@ -14,6 +14,8 @@ export interface IAddressBook {
 
 	// Remove bindings
 	removeBinding(identity: Ref<Identity>, address: Ref<Location>): Promise<void>
+
+	// Remove all bindings for an identity
 	removeIdentity(identity: Ref<Identity>): Promise<void>
 
 	// Get address from identity

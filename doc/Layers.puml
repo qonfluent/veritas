@@ -1,4 +1,4 @@
-@startuml
+@startuml Networking Layers
 
 title Networking Layers
 
@@ -18,9 +18,6 @@ package Transformers {
 	class CompressedConnection {
 		Reduces bandwidth usage
 	}
-	class IdentifiedConnection {
-		Identifies the sender and receiver
-	}
 	class MultiplexedConnection {
 		Allows multiple connections to share the same underlying connection
 	}
@@ -29,8 +26,7 @@ package Transformers {
 	ReliableConnection --> DefragmentedConnection
 	DefragmentedConnection --> EncryptedConnection
 	EncryptedConnection --> CompressedConnection
-	CompressedConnection --> IdentifiedConnection
-	IdentifiedConnection --> MultiplexedConnection
+	CompressedConnection --> MultiplexedConnection
 }
 
 @enduml

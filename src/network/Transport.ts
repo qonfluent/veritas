@@ -54,3 +54,44 @@ export interface IAddressFirewall {
 	// Allow or deny a dial
 	allowDial(address: Ref<Location>): Promise<boolean>
 }
+
+export interface ITransportManager {
+	// The local addresses of the instance
+	get localAddresses(): Ref<Location>[]
+
+	// The transports managed by the instance
+	get transports(): ITransport[]
+
+	// The listeners managed by the instance
+	get listeners(): IListener[]
+
+	// The connections managed by the instance
+	get connections(): IConnection[]
+
+	// Add a transport
+	addTransport(transport: ITransport): void
+
+	// Remove a transport
+	removeTransport(transport: Ref<ITransport>): void
+
+	// Get a transport
+	getTransport(transport: Ref<ITransport>): ITransport | undefined
+
+	// Select a transport for a remote address
+	select(address: Ref<Location>): ITransport[]
+
+	// Dial a remote address, adding a demultiplexer if necessary
+	dial(address: Ref<Location>, options?: DialOptions): Promise<IConnection>
+
+	// Listen for inbound connections
+	listen(options?: ListenOptions): IListener
+
+	// Close all connections to a remote address
+	closeConnections(address: Ref<Location>): void
+
+	// Handle new connections
+	onConnection(handler: (connection: IConnection) => void): void
+	
+	// Close all listeners and connections
+	closeAll(): void
+}

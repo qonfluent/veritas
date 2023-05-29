@@ -20,4 +20,7 @@ export interface IDiscoveryService extends IService {
 
 	// Address book the service updates
 	get addressBook(): IAddressBook
+
+	// Handle a new identity being discovered
+	onDiscovery(handler: (identity: Identity) => void): void
 }

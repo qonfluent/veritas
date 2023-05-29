@@ -1,3 +1,4 @@
+// Reference types for the network
 export type Ref<T> = Uint8Array
 
 // A location is a ref tag used to identify a specific location in the network

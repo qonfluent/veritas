@@ -31,6 +31,9 @@ export interface IConnection {
 }
 
 export interface IListener {
+	// The name of the listener
+	get id(): Ref<IListener>
+
 	// The listener this listener was upgraded from
 	get parent(): Ref<IListener> | undefined
 

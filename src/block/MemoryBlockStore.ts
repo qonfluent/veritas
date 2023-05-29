@@ -1,6 +1,7 @@
 import { BlockID, Block } from './Block'
 import { BlockStore, BlockData, Cursor } from './BlockStore'
-import { NodeID } from './Node'
+
+export type NodeID = Uint8Array
 
 export class MemoryBlockStore extends BlockStore {
 	private readonly _blocks = new Map<BlockID, BlockData>()
