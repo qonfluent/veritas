@@ -31,7 +31,9 @@ export abstract class BlockStore {
 	public abstract getHeads(): Ref<Block>[]
 	public abstract hasBlock(id: Ref<Block>): boolean
 	public abstract getBlockData(id: Ref<Block>): BlockData | undefined
-	public abstract getBlockByIndex(node: Ref<Identity>, index: number): Block | undefined
+	public abstract getBlocks(blocks: Ref<Block>[]): Block[]
+	public abstract getBlockByIndex(node: Ref<Identity>, index: number): Ref<Block> | undefined
+	public abstract getBlockRange(node: Ref<Identity>, start?: number, end?: number): Ref<Block>[]
 	protected abstract addBlockInner(id: Ref<Block>, parent: Ref<Identity>, block: Block): void
 
 	public add(block: Block): Ref<Block> {

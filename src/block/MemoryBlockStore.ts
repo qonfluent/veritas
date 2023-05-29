@@ -27,18 +27,26 @@ export class MemoryBlockStore extends BlockStore {
 		return this._blocks.get(id)
 	}
 
-	public getBlockByIndex(node: NodeID, index: number): Block | undefined {
+	public getBlocks(ids: Ref<Block>[]): Block[] {
+		return ids.flatMap((id) => this._blocks.get(id)?.block ?? [])
+	}
+
+	public getBlockByIndex(node: NodeID, index: number): Ref<Block> | undefined {
 		const blocks = this._nodeIndex.get(node)
 		if (blocks === undefined) {
 			return undefined
 		}
 
-		const id = blocks[index]
-		if (id === undefined) {
-			return undefined
+		return blocks[index]
+	}
+
+	public getBlockRange(node: NodeID, start?: number, end?: number): Ref<Block>[] {
+		const blocks = this._nodeIndex.get(node)
+		if (blocks === undefined) {
+			return []
 		}
 
-		return this._blocks.get(id)?.block
+		return blocks.slice(start, end)
 	}
 
 	public getCursor(): Cursor {
