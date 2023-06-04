@@ -12,6 +12,14 @@ export type ServiceExchangeResponseMessage = {
 	services: Ref<IService>[]
 }
 
+export type ServiceMessage = {
+	// Index of service in agreed service table
+	serviceIndex: number
+
+	// Data to send to service
+	data: Uint8Array
+}
+
 export interface IServiceExchangeService extends IService {
 	// The service manager to use
 	get serviceManager(): IServiceManager
