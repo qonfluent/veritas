@@ -1,5 +1,5 @@
-import { Ref } from '../../Utility'
-import { IConnection } from '../Connection'
+import { Ref } from '../Utility'
+import { IConnection } from '../network/Connection'
 import { IService, IServiceManager } from '../Service'
 
 export type ServiceExchangeRequestMessage = {

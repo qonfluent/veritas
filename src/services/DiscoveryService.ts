@@ -1,5 +1,5 @@
-import { IAddressBook } from '../AddressBook'
-import { Ref } from '../../Utility'
+import { IAddressBook } from '../network/AddressBook'
+import { Ref } from '../Utility'
 import { IService } from '../Service'
 import { Identity } from './IdentityService'
 

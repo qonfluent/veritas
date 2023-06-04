@@ -1,5 +1,5 @@
-import { IConnection } from './Connection'
-import { Ref } from '../Utility'
+import { IConnection } from './network/Connection'
+import { Ref } from './Utility'
 
 export interface IService {
 	// The name of the service

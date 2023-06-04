@@ -1,5 +1,5 @@
-import { IConnection } from '../Connection'
-import { Ref, Service } from '../../Utility'
+import { IConnection } from '../network/Connection'
+import { Ref, Service } from '../Utility'
 import { IService } from '../Service'
 
 export type VerificationMethodOrRef = Ref<VerificationMethod> | VerificationMethod

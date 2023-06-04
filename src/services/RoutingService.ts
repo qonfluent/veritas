@@ -1,9 +1,9 @@
-import { IConnection, IListener } from '../Connection'
+import { IConnection, IListener } from '../network/Connection'
 import { Identity } from './IdentityService'
-import { Ref } from '../../Utility'
+import { Ref } from '../Utility'
 import { IDiscoveryService } from './DiscoveryService'
-import { DialOptions, ListenOptions } from '../Transport'
-import { IAddressBook } from '../AddressBook'
+import { DialOptions, ListenOptions } from '../network/Transport'
+import { IAddressBook } from '../network/AddressBook'
 
 export type ForwardRequestMessage = {
 	target: Ref<Identity>

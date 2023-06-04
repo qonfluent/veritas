@@ -1,4 +1,4 @@
-import { Block, BlockStore, Cursor } from '../../block/BlockStore'
+import { Block, BlockStore, Cursor } from '../block/BlockStore'
 import { IService } from '../Service'
 
 export type BlockPushMessage = {

@@ -1,5 +1,5 @@
-import { Ref, TimeDuration, TimeInstant } from '../../Utility'
-import { IConnection } from '../Connection'
+import { Ref, TimeDuration, TimeInstant } from '../Utility'
+import { IConnection } from '../network/Connection'
 import { IService } from '../Service'
 
 export type PingMessage = {}
